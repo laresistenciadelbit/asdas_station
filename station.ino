@@ -1,64 +1,62 @@
-#include <SPI.h>
-#include <SD.h>
+  #define USE_SIM808  1 //si está activo usa la librería de SIM808 con soporte a gps
+//#define USE_SIM800L 1 //si está activa usa la librería de SIM800L
 
-#include <SIM808.h>
-#include <ArduinoLog.h>
-const char SIM_PIN[]="4217";
+#define USE_PIN 1 //si tenemos la tarjeta sim con pin configurado
 
+#include <Time.h>     //para usar arduino como un reloj real tomando los datos de las células móvil o del gps.
+#include <SPI.h>			//necesario para comunicarse con el modulo micro sd
+#include <SD.h>				//necesario para comunicarse con el modulo micro sd
+#include <ArduinoLog.h>		//útil para debugear por niveles de errores
+#include <SoftwareSerial.h>	//necesaria para la comunicación con los módulos sim
 
-#if defined(__AVR__)
-    #include <SoftwareSerial.h>
-    #define SIM_SERIAL_TYPE  SoftwareSerial          ///< Type of variable that holds the Serial communication with SIM808
-    #define SIM_SERIAL    SIM_SERIAL_TYPE(SIM_TX, SIM_RX) ///< Definition of the instance that holds the Serial communication with SIM808    
-    
-    #define STRLCPY_P(s1, s2) strlcpy_P(s1, s2, BUFFER_SIZE)
-#else
-    #include <HardwareSerial.h>
-    #define SIM_SERIAL_TYPE HardwareSerial          ///< Type of variable that holds the Serial communication with SIM808
-    #define SIM_SERIAL    SIM_SERIAL_TYPE(2)              ///< Definition of the instance that holds the Serial communication with SIM808    
-    
-    #define STRLCPY_P(s1, s2) strlcpy(s1, s2, BUFFER_SIZE)
-#endif
-
-#define SIM_RST   7 ///< SIM808 RESET (sleep???)
-#define SIM_RX    9 ///< SIM808 RXD
-#define SIM_TX    8 ///< SIM808 TXD
-#define SIM_PWR   6 ///< SIM808 PWRKEY
-//#define SIM_STATUS  3 ///< SIM808 STATUS
-
-#define SIM808_BAUDRATE 9600    ///< Control the baudrate use to communicate with the SIM808 module
+#define SIM_BAUDRATE 9600    	///< Control the baudrate use to communicate with the SIM808 module
 #define SERIAL_BAUDRATE 38400   ///< Controls the serial baudrate between the arduino and the computer
 #define NETWORK_DELAY  10000    ///< Delay between each GPS read & network restart
-#define CMD_DELAY  2500														   
+#define CMD_DELAY  2500	
 
-#define GPRS_APN    "internet"  ///< Your provider Access Point Name
-#define GPRS_USER   NULL        ///< Your provider APN user (usually not needed)
-#define GPRS_PASS   NULL        ///< Your provider APN password (usually not needed)
+#define SIM_RST   6 ///< SIM RESET
+#define SIM_RX    9 ///< SIM RXD
+#define SIM_TX    8 ///< SIM TXD
+
+#if defined(USE_PIN)
+	const char SIM_PIN[]="4217";	//código pin de la tarjeta SIM
+#endif
+
+const char APN[] = "internet";
+	
+#if defined(USE_SIM808)
+	#include <SIM808.h>
+	#define SIM_PWR   7 ///< SIM808 PWRKEY
+	//gps:
+	#define NO_FIX_GPS_DELAY 3000   ///< Delay between each GPS read when no fix is acquired
+	#define FIX_GPS_DELAY  10000    ///< Delay between each GPS read when a fix is acquired
+	#define POSITION_SIZE   128     ///< Size of the position buffer
+	typedef __FlashStringHelper* __StrPtr;
+#else
+	#include "SIM800L.h"
+#endif
 
 #define BUFFER_SIZE 512         ///< Side of the response buffer
 #define NL  "\n"
 
-//gps:
-#define NO_FIX_GPS_DELAY 3000   ///< Delay between each GPS read when no fix is acquired
-#define FIX_GPS_DELAY  10000    ///< Delay between each GPS read when a fix is acquired
-#define POSITION_SIZE   128     ///< Size of the position buffer
 
-#if defined(__AVR__)
-    typedef __FlashStringHelper* __StrPtr;
-#else
-    typedef const char* __StrPtr;
-#endif
+////SoftwareSerial simSerial = SoftwareSerial(SIM_TX, SIM_RX);
+////SIM808 sim808 = SIM808(SIM_RST, SIM_PWR);//, SIM_STATUS);
 
-SIM_SERIAL_TYPE simSerial = SIM_SERIAL;
-SIM808 sim808 = SIM808(SIM_RST, SIM_PWR);//, SIM_STATUS);
+////char position[POSITION_SIZE];
 
+////char buffer[BUFFER_SIZE];
+////char post_msg_buffer[BUFFER_SIZE];
+////char post_msg[BUFFER_SIZE];
 
 void setup() {
-delay(5000);//delay de arranque
+	
+	delay(6000);//delay de arranque
+
     Serial.begin(SERIAL_BAUDRATE);
     Log.begin(LOG_LEVEL_NOTICE, &Serial);
 
-    simSerial.begin(SIM808_BAUDRATE);
+    simSerial.begin(SIM_BAUDRATE);
     sim808.begin(simSerial);
 
     Log.notice(S_F("Powering on SIM808..." NL));
@@ -71,13 +69,6 @@ delay(5000);//delay de arranque
 
 void loop() {
 	
-char position[POSITION_SIZE]; //<-gps
-
-char buffer[BUFFER_SIZE];
-char post_msg_buffer[BUFFER_SIZE];
-char post_msg[BUFFER_SIZE];
-
-
 delay(CMD_DELAY);
 
 //gps
@@ -130,7 +121,7 @@ delay(NETWORK_DELAY);
     bool enabled = false;
   do {
         Log.notice(S_F("Powering on SIM808's GPRS..." NL));
-        enabled = sim808.enableGprs(GPRS_APN, GPRS_USER, GPRS_PASS);        
+        enabled = sim808.enableGprs(APN, NULL, NULL); //apn,user,pass
 delay(CMD_DELAY); 
 delay(CMD_DELAY); 					
     } while(!enabled);
@@ -140,7 +131,9 @@ delay(CMD_DELAY);
 // post con campos como get (urlencoded) ó en líneas separadas:
 // https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/POST
         
-        STRLCPY_P(post_msg, PSTR("msg=sim808post"));
+NO ESTÁ TOMANDO BIEN LOS VALORES DEL LAT Y LON AL TRANSFORMARLOS O UNIRLOS
+
+        strlcpy_P(post_msg, PSTR("msg=sim808post"), BUFFER_SIZE);
         strcat(post_msg, PSTR("&lat="));
           sprintf(post_msg_buffer,"%f",lat);//dtostrf(lat,8,2,post_msg_buffer);
           strcat(post_msg, post_msg_buffer );
