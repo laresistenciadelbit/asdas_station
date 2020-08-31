@@ -1,152 +1,231 @@
-  #define USE_SIM808  1 //si está activo usa la librería de SIM808 con soporte a gps
-//#define USE_SIM800L 1 //si está activa usa la librería de SIM800L
+//->! probar con GET primero en ambos módulos
+//	después probar con post usando:
+//		https://randomnerdtutorials.com/esp32-sim800l-publish-data-to-cloud/
+//		https://github.com/vshymanskyy/TinyGSM/issues/130
 
-#define USE_PIN 1 //si tenemos la tarjeta sim con pin configurado
+#define PIN_RX 		8
+#define PIN_TX 		9
+#define PIN_RST		6
+#define PIN_PWKEY	7
+		
+		
+// Select your modem:
+//#define TINY_GSM_MODEM_SIM800
+#define TINY_GSM_MODEM_SIM808
 
-#include <Time.h>     //para usar arduino como un reloj real tomando los datos de las células móvil o del gps.
-#include <SPI.h>			//necesario para comunicarse con el modulo micro sd
-#include <SD.h>				//necesario para comunicarse con el modulo micro sd
-#include <ArduinoLog.h>		//útil para debugear por niveles de errores
-#include <SoftwareSerial.h>	//necesaria para la comunicación con los módulos sim
+// Set serial for debug console (to the Serial Monitor, default speed 115200)
+#define SerialMon Serial
 
-#define SIM_BAUDRATE 9600    	///< Control the baudrate use to communicate with the SIM808 module
-#define SERIAL_BAUDRATE 38400   ///< Controls the serial baudrate between the arduino and the computer
-#define NETWORK_DELAY  10000    ///< Delay between each GPS read & network restart
-#define CMD_DELAY  2500	
+// Set serial for AT commands (to the module)
+// Use Hardware Serial on Mega, Leonardo, Micro
+//#define SerialAT Serial1
 
-#define SIM_RST   6 ///< SIM RESET
-#define SIM_RX    9 ///< SIM RXD
-#define SIM_TX    8 ///< SIM TXD
+// or Software Serial on Uno, Nano
+#include <SoftwareSerial.h>
+SoftwareSerial SerialAT(PIN_RX, PIN_TX); // RX, TX
+//->! probablemente tengamos que poner resistencia entre pwrin y gnd para que funione
 
-#if defined(USE_PIN)
-	const char SIM_PIN[]="4217";	//código pin de la tarjeta SIM
+// Increase RX buffer to capture the entire response
+// Chips without internal buffering (A6/A7, ESP8266, M590)
+// need enough space in the buffer for the entire response
+// else data will be lost (and the http library will fail).
+#if !defined(TINY_GSM_RX_BUFFER)
+  #define TINY_GSM_RX_BUFFER 700 //650
 #endif
 
-const char APN[] = "internet";
-	
-#if defined(USE_SIM808)
-	#include <SIM808.h>
-	#define SIM_PWR   7 ///< SIM808 PWRKEY
-	//gps:
-	#define NO_FIX_GPS_DELAY 3000   ///< Delay between each GPS read when no fix is acquired
-	#define FIX_GPS_DELAY  10000    ///< Delay between each GPS read when a fix is acquired
-	#define POSITION_SIZE   128     ///< Size of the position buffer
-	typedef __FlashStringHelper* __StrPtr;
+// See all AT commands, if wanted <-- DESACTIVAR PARA MODO NO DEBUG !!! (usa mas espacio)
+#define DUMP_AT_COMMANDS
+
+// Define the serial console for debug prints, if needed
+#define TINY_GSM_DEBUG SerialMon
+// #define LOGGING  // <- Logging is for the HTTP library
+
+// Range to attempt to autobaud
+#define GSM_AUTOBAUD_MIN 9600
+#define GSM_AUTOBAUD_MAX 9600 //115200 disminuido a 9600 ya que nuestro módulo va a usar siempre 9600 para un correcto funcionamiento
+
+// Add a reception delay - may be needed for a fast processor at a slow baud rate
+// #define TINY_GSM_YIELD() { delay(2); }
+
+// Define how you're planning to connect to the internet
+#define TINY_GSM_USE_GPRS true
+
+#define TINY_GSM_SSL_CLIENT_AUTHENTICATION  //añadido en la última versión de la librería, fuerza la conexión ssl
+
+// set GSM PIN, if any
+#define GSM_PIN "4217"
+
+// Your GPRS credentials, if any
+const char apn[]  = "internet";
+//const char gprsUser[] = "";
+//const char gprsPass[] = "";
+
+// Server details
+const char server[] = "postssl.meph.website";
+const char resource[] = "/?msg=sim808GET";
+const int  port = 443;
+
+#include <TinyGsmClient.h>
+#include <ArduinoHttpClient.h>
+
+// Just in case someone defined the wrong thing..
+#if TINY_GSM_USE_GPRS && not defined TINY_GSM_MODEM_HAS_GPRS
+#undef TINY_GSM_USE_GPRS
+#undef TINY_GSM_USE_WIFI
+#define TINY_GSM_USE_GPRS false
+#define TINY_GSM_USE_WIFI true
+#endif
+#if TINY_GSM_USE_WIFI && not defined TINY_GSM_MODEM_HAS_WIFI
+#undef TINY_GSM_USE_GPRS
+#undef TINY_GSM_USE_WIFI
+#define TINY_GSM_USE_GPRS true
+#define TINY_GSM_USE_WIFI false
+#endif
+
+#ifdef DUMP_AT_COMMANDS
+  #include <StreamDebugger.h>
+  StreamDebugger debugger(SerialAT, SerialMon);
+  TinyGsm modem(debugger);
 #else
-	#include "SIM800L.h"
+  TinyGsm modem(SerialAT);
 #endif
 
-#define BUFFER_SIZE 512         ///< Side of the response buffer
-#define NL  "\n"
-
-
-////SoftwareSerial simSerial = SoftwareSerial(SIM_TX, SIM_RX);
-////SIM808 sim808 = SIM808(SIM_RST, SIM_PWR);//, SIM_STATUS);
-
-////char position[POSITION_SIZE];
-
-////char buffer[BUFFER_SIZE];
-////char post_msg_buffer[BUFFER_SIZE];
-////char post_msg[BUFFER_SIZE];
+TinyGsmClientSecure client(modem);
+HttpClient http(client, server, port);
 
 void setup() {
-	
-	delay(6000);//delay de arranque
+  // Set console baud rate
+  SerialMon.begin(38400);
+  delay(10);
 
-    Serial.begin(SERIAL_BAUDRATE);
-    Log.begin(LOG_LEVEL_NOTICE, &Serial);
+// Set your reset, enable, power pins here
 
-    simSerial.begin(SIM_BAUDRATE);
-    sim808.begin(simSerial);
+pinMode(PIN_PWKEY, OUTPUT);
+pinMode(PIN_RST, OUTPUT);
+digitalWrite(PIN_PWKEY, LOW);
+digitalWrite(PIN_RST, HIGH);
 
-    Log.notice(S_F("Powering on SIM808..." NL));
-    sim808.powerOnOff(true);
-    sim808.init();    
+//	->! si no funciona, el pwkey y el rst funcionan de forma diferente.
+	//si no va, probar a usar comentandolo, si no va, probar a poner resistencia entre pwkey y gnd
 
-    Log.notice(S_F("Powering on SIM808's GPS..." NL));
-    sim808.powerOnOffGps(true);
+
+  SerialMon.println("Wait...");
+
+  // Set GSM module baud rate
+  //TinyGsmAutoBaud(SerialAT, GSM_AUTOBAUD_MIN, GSM_AUTOBAUD_MAX);
+   SerialAT.begin(9600);
+  delay(6000);
+
+  // Restart takes quite some time
+  // To skip it, call init() instead of restart()
+  SerialMon.println("Initializing modem...");
+  modem.restart();
+  // modem.init();
+delay(2000);
+
+  String modemInfo = modem.getModemInfo();
+  SerialMon.print("Modem Info: ");
+  SerialMon.println(modemInfo);
+delay(2000);
+
 }
 
 void loop() {
-	
-delay(CMD_DELAY);
 
-//gps
-    SIM808GpsStatus status_gps = sim808.getGpsStatus(position, POSITION_SIZE);
-    
-    if(status_gps < SIM808GpsStatus::Fix) {
-        Log.notice(S_F("No fix yet..." NL));
-        delay(NO_FIX_GPS_DELAY);
-        return;
+    // Unlock your SIM card with a PIN if needed
+    if ( GSM_PIN && modem.getSimStatus() != 3 ) {
+      modem.simUnlock(GSM_PIN);
     }
 
-//    uint16_t sattelites;
-    float lat, lon;
-    __StrPtr state;
+  delay(6000);
 
-    if(status_gps == SIM808GpsStatus::Fix) state = S_F("Normal");
-    else state = S_F("Accurate");
+  SerialMon.print("Waiting for network...");
+  if (!modem.waitForNetwork()) {
+    SerialMon.println(" fail");
+    delay(8000);
+    return;
+  }
+  SerialMon.println(" success");
 
-    sim808.getGpsField(position, SIM808GpsField::Latitude, &lat);
-    sim808.getGpsField(position, SIM808GpsField::Longitude, &lon);
+  if (modem.isNetworkConnected()) {
+    SerialMon.println("Network connected");
+  }
 
-delay(CMD_DELAY);
 
-//sim
-    SIM808NetworkRegistrationState status = sim808.getNetworkRegistrationStatus();
-delay(CMD_DELAY);				 
-    SIM808SignalQualityReport report = sim808.getSignalQuality();
-delay(CMD_DELAY);
-// añadimos el registro del pin de la sim:
-    bool success = sim808.simUnlock(SIM_PIN);
-    if(success)
-       Log.notice(S_F("SIM unlock : pin registered :)" NL));
-    else
-       Log.notice(S_F("failed registering pin (maybe already registered?)" NL));
-       
-delay(NETWORK_DELAY);														
-    bool isAvailable = static_cast<int8_t>(status) &
-        (static_cast<int8_t>(SIM808NetworkRegistrationState::Registered) | static_cast<int8_t>(SIM808NetworkRegistrationState::Roaming))
-        != 0;
+  // GPRS connection parameters are usually set after network registration
+    SerialMon.print(F("Connecting to "));
+    SerialMon.print(apn);
+    SerialMon.println("");
+    if (!modem.gprsConnect(apn)) //, gprsUser, gprsPass)) 
+    {
+      SerialMon.println(" fail");
+      delay(8000);
 
-    if(!isAvailable) {
-        Log.notice(S_F("No network yet..." NL));
-        delay(NETWORK_DELAY);
+      //otro intento antes de reiniciar:
+      if ( GSM_PIN && modem.getSimStatus() != 3 )
+        modem.simUnlock(GSM_PIN);
+      delay(6000);
+
+      if (!modem.gprsConnect(apn, gprsUser, gprsPass))
         return;
     }
+    SerialMon.println(" success");
 
-    Log.notice(S_F("Network is ready." NL));
-    Log.notice(S_F("Attenuation : %d dBm, Estimated quality : %d" NL), report.attenuation, report.rssi);
+    if (modem.isGprsConnected()) {
+      SerialMon.println("GPRS connected");
+    }
 
-    bool enabled = false;
-  do {
-        Log.notice(S_F("Powering on SIM808's GPRS..." NL));
-        enabled = sim808.enableGprs(APN, NULL, NULL); //apn,user,pass
-delay(CMD_DELAY); 
-delay(CMD_DELAY); 					
-    } while(!enabled);
-    
-        Log.notice(S_F("Sending HTTP request..." NL));
 
-// post con campos como get (urlencoded) ó en líneas separadas:
-// https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/POST
-        
-NO ESTÁ TOMANDO BIEN LOS VALORES DEL LAT Y LON AL TRANSFORMARLOS O UNIRLOS
+  SerialMon.print(F("Performing HTTPS GET request... "));
+    http.connectionKeepAlive();  // Currently, this is needed for HTTPS
+  int err = http.get(resource);
+  if (err != 0) {
+    SerialMon.println(F("failed to connect"));
+    delay(8000);
+    return;
+  }
 
-        strlcpy_P(post_msg, PSTR("msg=sim808post"), BUFFER_SIZE);
-        strcat(post_msg, PSTR("&lat="));
-          sprintf(post_msg_buffer,"%f",lat);//dtostrf(lat,8,2,post_msg_buffer);
-          strcat(post_msg, post_msg_buffer );
-        strcat(post_msg, PSTR("&lon="));
-          sprintf(post_msg_buffer,"%f",lon);
-          strcat(post_msg, post_msg_buffer );
-        uint16_t responseCode = sim808.httpPost("http://post.meph.website/?msg=sim808GET", S_F("application/x-www-form-urlencoded"), post_msg, buffer, BUFFER_SIZE);
-    Log.notice(S_F("Server responsed : %d" NL), responseCode);
-    Log.notice(buffer);
+  int status = http.responseStatusCode();
+  SerialMon.print(F("Response status code: "));
+  SerialMon.println(status);
+  if (!status) {
+    delay(10000);
+    return;
+  }
 
-sim808.reset(); //sim808.powerOnOff(false);    //apagamos?
-Log.notice("---END---");
+  SerialMon.println(F("Response Headers:"));
+  while (http.headerAvailable()) {
+    String headerName = http.readHeaderName();
+    String headerValue = http.readHeaderValue();
+    SerialMon.println("    " + headerName + " : " + headerValue);
+  }
 
-while(1==1);
-//ver como poner en modo sleep con esta librería o meterle el at directamente
+  int length = http.contentLength();
+  if (length >= 0) {
+    SerialMon.print(F("Content length is: "));
+    SerialMon.println(length);
+  }
+  if (http.isResponseChunked()) {
+    SerialMon.println(F("The response is chunked"));
+  }
+
+  String body = http.responseBody();
+  SerialMon.println(F("Response:"));
+  SerialMon.println(body);
+
+  SerialMon.print(F("Body length is: "));
+  SerialMon.println(body.length());
+
+  // Shutdown
+
+  http.stop();
+  SerialMon.println(F("Server disconnected"));
+
+#if TINY_GSM_USE_GPRS
+    modem.gprsDisconnect();
+    SerialMon.println(F("GPRS disconnected"));
+#endif
+
+  // Do nothing forever
+  while (1==1);
 }
