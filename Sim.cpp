@@ -1,96 +1,120 @@
-Sim::Sim(boolean debug_mode)
+Sim::Sim(const *server, const boolean gps, const boolean debug)
 {
-	SoftwareSerial SerialAT(PIN_RX, PIN_TX);
+	STRLCPY_P(this->server_address,server);
 	
-	modem(SerialAT);
-	client(modem);
-	http(client, server, port);
-	
-	digitalWrite(PIN_PWKEY, LOW);
-	digitalWrite(PIN_RST, HIGH);
-
-	SerialAT.begin(9600);	//iniciamos la vía de comunicación con el módulo sim
-	delay(6000);
-	modem.restart();			//reiniciamos el módulo sim para sincronizar la comunicación
-	delay(2000);
-	
-	if (debug_mode)
-		this->debug=true;
+	if (gps)
+	{
+		this->use_gps=true;
+		sim_module.powerOnOffGps(true);
+	}
 	else
-		this->debug=false;
+		this->use_gps=false;
+		
+	if (debug)
+	{
+		this->debug_mode=true;
+		Serial.begin(115200); //iniciamos el puerto de comunicación del microcontrolador (recomendado >9600 y <115200)
+		Log.begin(LOG_LEVEL_NOTICE, &Serial);
+	delay(10);
+	}
+	else
+		this->debug_mode=false;
+		
+	Serial1.begin(9600);	//iniciamos la vía de comunicación con el módulo sim
 	
-	this->connect_network();
-	this->connect_gprs();
+	this->sim_module = SIM8xx(SIM_RST, SIM_PWR);
+	this->sim_module.begin(Serial1);
+	this->sim_module.powerOnOff(true);
+    this->sim_module.init(); 
+	
+
+	if( connect_network() )
+	{
+		this->connection_successful=connect_gprs();
+	}
+	else
+		this->connection_successful=false;
+	
 	
 }
 
-void Sim::(* resetSoftware)(void) = 0; //software reset
-	//then call with resetSoftware();
-	
-void Sim::connect_network(int intento)
+//void Sim::(* resetSoftware)(void) = 0; //software reset //then call with resetSoftware();
+
+boolean Sim::is_full_connected(){return this->connection_successful;}
+
+boolean Sim::connect_network(int intento=0)
 {
+	SIM808NetworkRegistrationState network_status;
+	boolean return_status;
+	
 	this->unlock_sim();
 
+	if(this->debug_mode)Serial.print("[+]Waiting for network...");
 	
-	if(debug)Serial.print("[+]Waiting for network...");
-	
-	if (!modem.waitForNetwork()) 
+	network_status = sim_module.getNetworkRegistrationStatus();
+	if( static_cast<int8_t>(network_status) & (static_cast<int8_t>(SIM808NetworkRegistrationState::Registered) | static_cast<int8_t>(SIM808NetworkRegistrationState::Roaming)) == 0 )
 	{
 		Serial.println(" [-]Fail");
 		
 		if(intento>3)
-			resetSoftware();//return;
+			return_status=false;//resetSoftware();
 		else
 		{
-			delay(8000);
-			this->connect_network(intento+1);	//recursivo
+			delay(8500);
+			return_status=connect_network(intento+1);	//recursivo
 		}
 	}
-	if(debug)Serial.println("[+]Network connected");
-
-	
+	else
+	{
+		if(this->debug_mode)Serial.println("[+]Network connected");
+		return_status=true;
+	}
+	return return_status;
 }
 
-void Sim::connect_gprs(int intento)
+void Sim::connect_gprs(int intento=0)
 {
+	boolean return_status;
+	
 	this->unlock_sim(); //solo desbloquea en caso de que no se haya desbloqueado (que ya debería estarlo)
 	
 	// GPRS connection parameters are usually set after network registration
-	if(debug)Serial.print("[+]Connecting to 2g network");
-    if (!modem.gprsConnect(apn)) //, gprsUser, gprsPass)) 
+	if(this->debug_mode)Serial.print("[+]Connecting to 2g network");
+    if (!sim_module.enableGprs(GPRS_APN,GPRS_USER,GPRS_PASS)) //, gprsUser, gprsPass)) 
     {
-      if(debug)Serial.println(" [-]Fail");
-      delay(8000);
+      if(debug_mode)Serial.println(" [-]Fail");
+      delay(8500);
 
       //reintentamos recursivamente antes de reiniciar:
 		if(intento>3)
-			resetSoftware();//return;
+			return_status=false;//resetSoftware();
 		else
 		{
-			delay(8000);
-			this->connect_gprs(intento+1);	//recursivo
+			delay(8500);
+			connect_gprs(intento+1);	//recursivo
 		}
-    }
-
-    if (modem.isGprsConnected()) {
-      if(debug)Serial.println("GPRS connected");
-    }
-	
+    } 
+	else
+	{
+		return_status=true;
+		if(this->debug_mode)Serial.println("GPRS connected");
+	}
+	return return_status;
 }
 
 void Sim::unlock_sim()
 {
-    if ( GSM_PIN && modem.getSimStatus() != 3 )	//si se definió pin de la tarjeta sim, se desbloquea
+    if ( GSM_PIN && sim_module.getSimStatus() != 3 )	//si se definió pin de la tarjeta sim, se desbloquea
     {
-		modem.simUnlock(GSM_PIN);
+		sim_module.simUnlock(GSM_PIN);
 		delay(6000);
 	}	
 }
 
-void Sim::get_time() //tomamos la hora del reloj del módulo sim (cada vez que se conecta a la red se sincroniza automáticamente)
+void Sim::get_time(char *clock_output) //tomamos la hora del reloj del módulo sim (cada vez que se conecta a la red se sincroniza automáticamente)
 {
 	//formato: "20/09/20,04:23:58+08" el 08 es el timezone en cuartos de hora, así que hay que dividirlo entre 4 para que sea el equivalente a 1 hora, así obtendríamos nuestro +2 oficial (pero hay que recordar que la hora ya está con el +2 incluído, así que tal vez debiéramos restarle el +2 a la hora para sumarselo en el servidor al huso horario configurado en él)
-	return modem.getGSMDateTime(DATE_FULL);
+	sim_module.getInternalClock(clock_output);
 }
 
 void Sim::battery_left()	// <!!!> se la daremos al GET/POST si así lo hemos indicado en una constante
@@ -98,122 +122,63 @@ void Sim::battery_left()	// <!!!> se la daremos al GET/POST si así lo hemos ind
 	uint8_t  chargeState = -99;
 	int8_t   percent     = -99;
 	uint16_t milliVolts  = -9999;
-	modem.getBattStats(chargeState, percent, milliVolts);
+	sim_module.getBattStats(chargeState, percent, milliVolts);
 	return percent;
 }
 
 
-void Sim::getGPS()	// <!!!> MODIFICAR para tomar &lat2 &lon2 fuera de la función (variables de la clase)(el resto variables locales como están ahora)
+boolean Sim::getGPS()	// <!!!> MODIFICAR para tomar &lat2 &lon2 fuera de la función (variables de la clase)(el resto variables locales como están ahora)
 {
-	modem.enableGPS();
+	sim_module.powerOnOffGps(true); //lo encendemos si lo habíamos apagado
 	
-	// <!!!> OJO CON EL ENABLE; no creo q resetee el gps al volverlo a llamar, pero por si a caso tener en cuenta y mirarlo.
-		
-	// <!!!> CREAR DELAY HASTA QUE ENCUENTRE SATÉLITES (mínimo 1 minuto?)
-	
-	float lat2      = 0;
-	float lon2      = 0;
-	float speed2    = 0;
-	float alt2      = 0;
-	int   vsat2     = 0;
-	int   usat2     = 0;
-	float accuracy2 = 0;
-	int   year2     = 0;
-	int   month2    = 0;
-	int   day2      = 0;
-	int   hour2     = 0;
-	int   min2      = 0;
-	int   sec2      = 0;
-  
-  
-	if (modem.getGPS(&lat2, &lon2, &speed2, &alt2, &vsat2, &usat2, &accuracy2, &year2, &month2, &day2, &hour2, &min2, &sec2)) 
-	{
-		if(usat2>=3) // ???? <- lo he puesto para tomar el valor del gps únicamente si está tomando las coordenadas
-		{			 // presuponiendo que el valor mínimo de satelites usados han de ser 3 para tomar las coordenadas correctamente
-					 // pero lo más seguro es que podamos saber si ha obtenido bien las coordenadas con otra variable como "accuracy2" o viendo si "lat2" no es NULL
-			DBG("Latitude:", String(lat2, 8), "\tLongitude:", String(lon2, 8));
-			DBG("Speed:", speed2, "\tAltitude:", alt2);
-			DBG("Visible Satellites:", vsat2, "\tUsed Satellites:", usat2);
-			DBG("Accuracy:", accuracy2);
-			DBG("Year:", year2, "\tMonth:", month2, "\tDay:", day2);
-			DBG("Hour:", hour2, "\tMinute:", min2, "\tSecond:", sec2);
-		}
+	gps_status = sim_module.getGpsStatus(gps_position_buffer, 128);
+
+
+	if(status < SIM808GpsStatus::Fix) {
+		if(this->debug_mode)	Log.notice(S_F("No fix yet..." NL));
+//		delay(NO_FIX_GPS_DELAY);	// OJO CON ESTE DELAY !!!!!!!!!
+		return false;
 	}
+
+	//sim_module.getGpsField(gps_position_buffer, SIM808GpsField::GnssUsed, &sattelites);
+	sim_module.getGpsField(gps_position_buffer, SIM8xxGpsField::Latitude,  &lat);
+    sim_module.getGpsField(gps_position_buffer, SIM8xxGpsField::Longitude, &lon);
+
+	return true;
 	
-	// otra forma es tomarlo en bruto directamente: String gps_raw = modem.getGPSraw();
-	
-	
-	//modem.disableGPS(); // <!!!> deshabilitar, en algún momento ?
+	//sim_module.disableGPS(); // <!!!> deshabilitar, en algún momento ?
 }
 
-
-void Sim::send_http()
+void Sim::insert_json_parameter(char *var_name,char *var_value)
 {
-	#if defined(USE_HTTP_POST)
-		this->HTTPS_POST();
-	#else
-		this->HTTPS_GET();
-	#endif
-	
+	//ejemplo:  "{\"name\": \"morpheus\", \"job\": \"leader\"}";
+	strlcpy(parameters_buffer,"\"",PARAMETERS_SIZE);
+	strlcpy(parameters_buffer,var_name,PARAMETERS_SIZE);
+	strlcpy(parameters_buffer,"\": \"",PARAMETERS_SIZE);
+	strlcpy(parameters_buffer,var_value,PARAMETERS_SIZE);
+	strlcpy(parameters_buffer,"\", ",PARAMETERS_SIZE);
 }
 
-void Sim::HTTPS_POST()
+boolean Sim::send_http_post(char url[], char id[], char sensor_number[], char sensor_value[], char time[])
 {
+	char parameters_buffer[200];
+	uint16_t responseCode;
 	
-}
+	//Concatenamos los parámetros de la petición POST
+	strlcpy(parameters_buffer,"{",PARAMETERS_SIZE);
+	insert_json_parameter(S_F("id"),id);
+	insert_json_parameter(S_F("sensor_id"),sensor_value);
+	insert_json_parameter(S_F("time"),get_time());
+	
+	if(this->use_gps)
+	{
+		insert_json_parameter(S_F("lat"),this->lat);
+		insert_json_parameter(S_F("lon"),this->lon);
+	}
+	strlcpy(parameters_buffer,"}",PARAMETERS_SIZE);
+	
+	//Realizamos la peticion http post
+	responseCode = sim8xx.httpPost(this->server_address, S_F("application/json"), parameters_buffer, parameters_buffer, BUFFER_SIZE);
 
-void Sim::HTTPS_GET()
-{
-	
-  if(debug)Serial.print(F("Performing HTTPS GET request... "));
-  http.connectionKeepAlive();  // Currently, this is needed for HTTPS
-  int err = http.get(resource);
-  if (err != 0) {
-    if(debug)Serial.println(F("failed to connect"));
-    delay(8000);
-    return;
-  }
-
-  int status = http.responseStatusCode();
-  if(debug)Serial.print(F("Response status code: "));
-  if(debug)Serial.println(status);
-  if (!status) {
-    delay(10000);
-    return;
-  }
-
-  if(debug)Serial.println(F("Response Headers:"));
-  while (http.headerAvailable()) {
-    String headerName = http.readHeaderName();
-    String headerValue = http.readHeaderValue();
-    if(debug)Serial.println("    " + headerName + " : " + headerValue);
-  }
-
-  int length = http.contentLength();
-  if (length >= 0) {
-    if(debug)Serial.print(F("Content length is: "));
-    if(debug)Serial.println(length);
-  }
-  if (http.isResponseChunked()) {
-    if(debug)Serial.println(F("The response is chunked"));
-  }
-
-  String body = http.responseBody();
-  if(debug)Serial.println(F("Response:"));
-  if(debug)Serial.println(body);
-
-  if(debug)Serial.print(F("Body length is: "));
-  if(debug)Serial.println(body.length());
-
-  // Shutdown
-
-  http.stop();
-  if(debug)Serial.println(F("Server disconnected"));
-	
-	
-	
-	
-	
-	
-	
+	return (responseCode==200);
 }

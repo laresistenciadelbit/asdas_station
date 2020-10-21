@@ -1,20 +1,21 @@
+#define SRVADD_SIZE 50
+#define GPSBUFFER_SIZE 128
+#define PARAMETERS_SIZE 200
+
 Class Sim
 {
 	private:
-	TinyGsm modem;
-	TinyGsmClientSecure client;
-	HttpClient http;
+	SIM8xx sim_module;
+	char parameters_buffer[PARAMETERS_SIZE];
+	const char server_address[SRVADD_SIZE];
 	
-	SoftwareSerial SerialAT;
-
+	SIM8xxGpsStatus gps_status;
+	char gps_position_buffer[GPSBUFFER_SIZE];
+	float lat, lon;
+	
+	boolean connection_successful;
 	boolean debug;
-
-#if defied(USE_SIM808)
-		SIM808 sim;
-#else
-		SIM800L sim;
-#endif
-
+	boolean gps;
 
 	public:
 		Sim(byte , byte);
@@ -23,6 +24,7 @@ Class Sim
 		void connect_gprs(int intento=1);
 		String get_time(void);
 		int8_t battery_left(void);
+		void get_time(char *);
 		
 
 }
