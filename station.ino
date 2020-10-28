@@ -81,12 +81,12 @@ void loop()
 	while( mysim.is_full_connected() )	//hasta que no se vuelva a verificar la conexión, se mantendrá dentro del bucle para no resetear el módulo al inicializar la clase Sim.
 	{
 
-		//if data_waiting_in_sd
-			//bucle read_sd_data_row
-				//send_http_post(sd_data_row)
+		while( mysim.data_waiting_in_sd() )	//mientras haya líneas en el fichero de almacenamiento
+		{
+			if(!mysim.send_last_sd_line())	//las envía, si falla al enviar se sale
+				break;
+		}
 
-
-		
 	//Toma los valores de los sensores
 		for(uint8_t i=0; i<sizeof(pin_sensors); i++)
 		{
@@ -124,18 +124,18 @@ void loop()
 	//Envía los datos obtenidos de los sensores
 		for(uint8_t sensor_number=1; sensor_number<sizeof(pin_sensors)+1; sensor_number++)
 		{
-      //convertimos en cadena de caracteres tanto el número del sensor como su valor
-      itoa(sensor_number,sensor_number_str_buffer,10);
-      itoa(sensor_value[sensor_number],sensor_value_str_buffer,10);
+			//convertimos en cadena de caracteres tanto el número del sensor como su valor
+			itoa(sensor_number,sensor_number_str_buffer,10);
+			itoa(sensor_value[sensor_number],sensor_value_str_buffer,10);
     
 			//Si encontró la posición gps o si no usa gps envía la petición http_post
 			if( (USE_GPS && gps_position_found) || !USE_GPS )
-				http_post_correct = mysim.send_http_post(ID, sensor_number_str_buffer, sensor_value_str_buffer, current_time );
+				http_post_correct = mysim.send_data_to_server(ID, sensor_number_str_buffer, sensor_value_str_buffer, current_time );
 			
 			//si no encontró la posición gps, o la petición post devolvió error: escribe los datos del sensor a la tarjeta sd)
 			if( (USE_GPS && !gps_position_found) || !http_post_correct )
 			{
-        //IMPLEMENTAR !!!!!! ->> mysim.save_in_sd_card(ID, sensor_number, sensor_value[sensor_number], time);
+				mysim.save_in_sd_card(ID, sensor_number_str_buffer, sensor_value_str_buffer, current_time);
 			}
 		}
 

@@ -1,3 +1,5 @@
+#include <SPI.h>
+#include "SdFat.h"
 #include <SIM8xx.h>
 
 //#define PIN_PWKEY 7
@@ -12,15 +14,19 @@ class ModuleManager
 	private:
 	SIM8xx *sim_module;
 	char sim_pin[4];
-  char gprs_apn[24];
-  char gprs_user[32];
-  char gprs_pass[16];
+	char gprs_apn[24];
+	char gprs_user[32];
+	char gprs_pass[16];
 	char parameters_buffer[PARAMETERS_SIZE];
 	char server_address[SRVADD_SIZE];
-	
+
+	SdFat SD;
+	File myFile;
+	const char *file_name={"data.txt"};
+  
 	SIM8xxGpsStatus gps_status;
 	char gps_position_buffer[GPSBUFFER_SIZE];
-	float lat, lon;
+	char lat[10], lon[10];
 	
 	bool connection_successful;
 	bool debug_mode;
@@ -34,10 +40,17 @@ class ModuleManager
 		bool connect_gprs(uint8_t);
 		void unlock_sim(void);
 		int8_t battery_left(void);
-    bool get_gps(void);
+    
+		bool get_gps(void);
 		void get_time(char *);
 		int8_t get_sensor_value(uint8_t);
-		void insert_json_parameter(char *, char *);
-		bool send_http_post(char *, char *, char *, char *);
+   
+		void insert_json_parameter(char *, char *, char *);
+		void generate_json_parameters(char *, char *, char *, char *, char *);
+    bool send_data_to_server(char *, char *, char *, char *);
+		bool send_http_post(char *);
 
+    void save_in_sd_card(char *, char *, char *, char *);
+    bool data_waiting_in_sd(void);
+    bool send_last_sd_line(void);
 };
