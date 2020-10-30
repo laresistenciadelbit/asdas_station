@@ -4,10 +4,9 @@
 
 #include "ModuleManager.h"
 
-ModuleManager::ModuleManager(const char *server, const bool gps, const bool debug, const int8_t pwkey, const int8_t rst ,char *pin, char *apn, char *user, char *pass)
+ModuleManager::ModuleManager(const char *id, const char *server, const bool gps, const bool debug, const int8_t pwkey, const int8_t rst ,char *pin, char *apn, char *user, char *pass)
 {
-
-    
+	strlcpy(this->station_id,id,sizeof(id));
 	strlcpy(this->server_address,server,sizeof(server));
 
 	strcpy(this->gprs_apn,apn);
@@ -72,8 +71,6 @@ ModuleManager::ModuleManager(const char *server, const bool gps, const bool debu
 	
 	
 }
-
-//void ModuleManager::(* resetSoftware)(void) = 0; //software reset //then call with resetSoftware();
 
 bool ModuleManager::is_full_connected(void){return this->connection_successful;}
 
@@ -156,48 +153,59 @@ void ModuleManager::unlock_sim(void)
 	}	
 }
 
-int8_t ModuleManager::get_sensor_value(uint8_t sensor_pin){	return analogRead(sensor_pin);	}
+int8_t ModuleManager::get_sensor_val(uint8_t sensor_pin){	return analogRead(sensor_pin);	}
 
-void ModuleManager::get_time(char *clock_output) //tomamos la hora del reloj del módulo sim (cada vez que se conecta a la red se sincroniza automáticamente)
+void ModuleManager::get_time(void/*char *clock_output*/) //tomamos la hora del reloj del módulo sim (cada vez que se conecta a la red se sincroniza automáticamente)
 {
 	//formato: "20/09/20,04:23:58+08" el 08 es el timezone en cuartos de hora, así que hay que dividirlo entre 4 para que sea el equivalente a 1 hora, así obtendríamos nuestro +2 oficial (pero hay que recordar que la hora ya está con el +2 incluído, así que tal vez debiéramos restarle el +2 a la hora para sumarselo en el servidor al huso horario configurado en él)
-	sim_module->getInternalClock(clock_output);
+	sim_module->getInternalClock(this->current_time);	//<- anteriormente lo devolvíamos al main, ahora lo gestionamos desde la clase
 }
 
-int8_t ModuleManager::battery_left(void)	
+uint8_t ModuleManager::battery_left(void)	
 { 
   // <!!!> se la daremos al GET/POST si así lo hemos indicado en una constante / o lo usaremos para ponerlo en modo bajo consumo
 	return sim_module->getBattStat();
 }
 
+uint8_t ModuleManager::get_satellites_found(void)
+{
+	return this->sat;
+}
 
-bool ModuleManager::get_gps(void)
+void ModuleManager::get_gps(void)
 {
 	char lat_lon_buffer[12];
 	float f_lat,f_lon;
+	uint8_t satellites;
 		
 	sim_module->powerOnOffGps(true); //lo encendemos si lo habíamos apagado
-	
-	this->gps_status = sim_module->getGpsStatus(gps_position_buffer, 128);
 
-
-	if(this->gps_status < SIM8xxGpsStatus::Fix) 
+	this->gps_position_found=false;
+	for(int i=0; i<3 && !this->gps_position_found; i++)//LOOP de 3 intentos con delays de 60/3 segundos (1 minuto aprox. para encontrar gps's si ha perdido todos los satélites)
 	{
-		if(this->debug_mode)	
-		  Serial.println(S_F("[-]GPS: No fix yet..."));
-//	delay(NO_FIX_GPS_DELAY);	// OJO CON ESTE DELAY !!!!!!!!!
-		return false;
+		this->gps_status = sim_module->getGpsStatus(gps_position_buffer, 128);
+
+
+		if(this->gps_status < SIM8xxGpsStatus::Fix) 
+		{
+			if(this->debug_mode)	
+			  Serial.println(S_F("[-]GPS: No fix yet..."));
+			//return false;
+			delay(60000/3);
+		}
+		else
+		{
+			this->gps_position_found=true;
+			
+			sim_module->getGpsField(gps_position_buffer, SIM8xxGpsField::GnssUsed, &satellites );
+			sim_module->getGpsField(gps_position_buffer, SIM8xxGpsField::Latitude,  &f_lat);
+			sim_module->getGpsField(gps_position_buffer, SIM8xxGpsField::Longitude, &f_lon);
+
+			dtostrf( f_lat, 9, 6, this->lat );
+			dtostrf( f_lon, 9, 6, this->lon );
+			this->sat=satellites;//itoa(sattelites, this->sat, 10);
+		}
 	}
-
-	//sim_module->getGpsField(gps_position_buffer, SIM8xxGpsField::GnssUsed, &sattelites);
-	sim_module->getGpsField(gps_position_buffer, SIM8xxGpsField::Latitude,  &f_lat);
-	sim_module->getGpsField(gps_position_buffer, SIM8xxGpsField::Longitude, &f_lon);
-
-	dtostrf( f_lat, 9, 6, this->lat );
-	dtostrf( f_lon, 9, 6, this->lon );
-	
-	return true;
-	
 	//sim_module->disableGPS(); // <!!!> deshabilitar, en algún momento ?
 }
 
@@ -211,28 +219,58 @@ void ModuleManager::insert_json_parameter(char *var_name,char *var_value,char *b
 	strlcpy(buffer,"\", ",PARAMETERS_SIZE);
 }
 
-void ModuleManager::generate_json_parameters(char *buffer, char id[], char sensor_number[], char sensor_value[], char time[])
+void ModuleManager::generate_json_parameters(char *buffer, char sensor_name[], char time[], char sensor_val[])
 {
 	//Concatenamos los parámetros
 	strlcpy(buffer,"{",PARAMETERS_SIZE);
-	insert_json_parameter("id",id, buffer);
-	insert_json_parameter("sensor_id",sensor_value, buffer);
+	insert_json_parameter("station_id",this->station_id, buffer);
+	insert_json_parameter("sensor_name",sensor_name, buffer);
 	insert_json_parameter("time",time, buffer);
-	
-	if(this->use_gps)
+	insert_json_parameter("sensor_val",sensor_val, buffer);
+/*
+	if(this->use_gps && gps_position_found)
 	{
 		insert_json_parameter("lat",this->lat, buffer);
 		insert_json_parameter("lon",this->lon, buffer);
 	}
+*/
 	strlcpy(parameters_buffer,"}",PARAMETERS_SIZE);
 }
 
-bool ModuleManager::send_data_to_server(char id[], char sensor_number[], char sensor_value[], char time[])
+void ModuleManager::generate_aditional_json_parameters(char *buffer, char time[], char status_name[], char status_val[])
+{
+	//Concatenamos los parámetros
+	strlcpy(buffer,"{",PARAMETERS_SIZE);
+	insert_json_parameter("station_id",station_id, buffer);
+	insert_json_parameter("time",time, buffer);
+	
+	if( ( strcmp(status_name,"lat")==0 || strcmp(status_name,"lon")==0 ) && this->use_gps && gps_position_found)
+	{
+		insert_json_parameter("lat",this->lat, buffer);
+		insert_json_parameter("lon",this->lon, buffer);
+	}
+	else
+	{
+		insert_json_parameter(status_name,status_val, buffer);
+	}
+	
+	strlcpy(parameters_buffer,"}",PARAMETERS_SIZE);
+}
+
+bool ModuleManager::send_data_to_server(char sensor_name[], char sensor_val[])
 {
 	char parameters_buffer[PARAMETERS_SIZE];
-	uint16_t responseCode;
 	
-	generate_json_parameters(parameters_buffer,id,sensor_number,sensor_value,time);
+	generate_json_parameters(parameters_buffer,this->station_id,sensor_name,sensor_val,this->current_time);
+	
+	return send_http_post(parameters_buffer);
+}
+
+bool ModuleManager::send_aditional_data_to_server(char status_name[],char status_val[])
+{
+	char parameters_buffer[PARAMETERS_SIZE];
+	
+	generate_aditional_json_parameters(parameters_buffer, this->station_id, this->current_time, status_name, status_val);
 	
 	return send_http_post(parameters_buffer);
 }
@@ -242,10 +280,10 @@ bool ModuleManager::send_http_post(char *parameters_buffer)
   uint16_t responseCode;
 	responseCode = sim_module->httpPost(this->server_address, S_F("application/json"), parameters_buffer, parameters_buffer, BUFFER_SIZE);
 
-	return (responseCode==200);	// !!! <-- en todo caso devolverá 200 en string!!!
+	return (responseCode==200);	// !!! <-- en todo caso devolvería 200 en string?
 }
 
-void ModuleManager::save_in_sd_card(char id[], char sensor_number[], char sensor_value[], char time[])
+void ModuleManager::save_data_in_sd(char sensor_name[], char sensor_val[])
 {
 	char parameters_buffer[PARAMETERS_SIZE];
 	
@@ -253,9 +291,9 @@ void ModuleManager::save_in_sd_card(char id[], char sensor_number[], char sensor
 	if (myFile) 
 	{
 		if(this->debug_mode) 
-			Serial.println(F("[+]writing to test.txt..."));
+			Serial.println(F("[+]{save_data_in_sd} writing to test.txt..."));
 		
-		generate_json_parameters(parameters_buffer, id, sensor_number, sensor_value, time);
+		generate_json_parameters(parameters_buffer, this->station_id, sensor_name, sensor_val, this->current_time);
 		
 		//myFile.println("1,2020/09/28_20:25+2,0.38651,-0.571498,101.77");
 		//myFile.println("1,2020/09/28_20:38+2,0.38637,-0.571411,134.22");
@@ -263,14 +301,40 @@ void ModuleManager::save_in_sd_card(char id[], char sensor_number[], char sensor
 		myFile.close();
 
 		if(this->debug_mode) 
-			Serial.println(F("[+]done writting."));
+			Serial.println(F("[+]{save_data_in_sd} done writting."));
 	} 
 	else 
 	{
 		if(this->debug_mode) 
-			Serial.println(F("[-]error opening file for WRITE"));
+			Serial.println(F("[-]{save_data_in_sd} error opening file for WRITE"));
 	}
 }
+
+void ModuleManager::save_aditional_data_in_sd(char status_name[],char status_val[])
+{
+	char parameters_buffer[PARAMETERS_SIZE];
+	
+	myFile = SD.open(this->file_name, FILE_WRITE);
+	if (myFile) 
+	{
+		if(this->debug_mode) 
+			Serial.println(F("[+]{save_aditional_data_in_sd} writing to test.txt..."));
+		
+		generate_aditional_json_parameters(parameters_buffer, this->station_id, this->current_time, status_name, status_val);
+		
+		myFile.println(parameters_buffer);
+		myFile.close();
+
+		if(this->debug_mode)
+			Serial.println(F("[+]{save_aditional_data_in_sd} done writting."));
+	}
+	else
+	{
+		if(this->debug_mode) 
+			Serial.println(F("[-]{save_aditional_data_in_sd} error opening file for WRITE"));
+	}
+}
+
 
 bool ModuleManager::data_waiting_in_sd()
 {

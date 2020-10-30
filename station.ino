@@ -10,16 +10,15 @@
 #define GPRS_APN    "internet"
 #define GPRS_USER   NULL
 #define GPRS_PASS   NULL
-	//pines que usaremos ( RST Y PWKEY para algunos modelos de sim808 y sim7600e )
+	//pines que usaremos (pines RX y TX dedicados)( RST Y PWKEY para algunos modelos de sim808 y sim7600e )
 #define PIN_RX 		8
 #define PIN_TX 		9
-// Arduino no permite instanciar clases, por lo que la definición de estos pines también está en el fichero "ModuleManager.h"
+
 #define PIN_PWKEY	7
 #define PIN_RST		6
 
   //Definimos los pines de los sensores que queremos leer (podemos poner tantos como queramos)
 const int8_t pin_sensors[]={10,11};
-
 	//Definimos si queremos que se active un pin de salida ante una entrada concreta en el sensor 1
 #define PIN_OUTPUT 13
 	//Definimos el valor del sensor 1 para el cual activará el PIN_OUTPUT a HIGH
@@ -54,9 +53,7 @@ void setup() //configuración de arranque
 		digitalWrite(PIN_PWKEY, LOW);
 		digitalWrite(PIN_RST, HIGH);
 	//#endif
-
 }
-
 
 void loop()
 {
@@ -74,7 +71,8 @@ void loop()
 	ModuleManager mysim(SERVER_ADDRESS,USE_GPS,DEBUG_MODE,PIN_PWKEY,PIN_RST,sim_unlock_pin,GPRS_APN,GPRS_USER,GPRS_PASS);
 	//Sim mysim(SERVER_ADDRESS,USE_GPS,DEBUG_MODE, UNLOCK_PIN); // <- si tenemos código pin configurado en la tarjeta, usaremos esta inicialización de clase
 	
-	delay(120000); // dos minutos de espera para que coja gps
+	if(USE_GPS)
+		delay(120000); // dos minutos de espera para que coja gps
 	
 	/*módulo arrancado, conectado a red y a gps*/
 	
@@ -97,10 +95,10 @@ void loop()
 				{
 					digitalWrite(PIN_OUTPUT, HIGH); //superó el valor límite el sensor1: activamos la salida por el pin de salida
          
-          #ifdef OUTPUT_TIMEOUT //la desactivamos tras un tiempo si hemos definido el timeout
-            delay(OUTPUT_TIMEOUT);
-            digitalWrite(PIN_OUTPUT, LOW);
-          #endif
+					#ifdef OUTPUT_TIMEOUT //la desactivamos tras un tiempo si hemos definido el timeout
+						delay(OUTPUT_TIMEOUT);
+						digitalWrite(PIN_OUTPUT, LOW);
+					#endif
           
 				} else
 					digitalWrite(PIN_OUTPUT, LOW);					
