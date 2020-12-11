@@ -29,9 +29,10 @@
 #define PIN_PWKEY	7
 #define PIN_RST		6
 
-  //Definimos los pines de los sensores que queremos leer (podemos poner tantos como queramos)
-const int8_t sensors_pin[]={10,11};
-const int8_t sensors_name[]={"temperature","co2"};
+  //Definimos los pines de los sensores que queremos leer (podemos poner tantos como queramos. *el límite son los pines y la memoria)
+#define SENSOR_NUMBER 2
+const int8_t sensor_pin[SENSOR_NUMBER]={10,11};
+const char sensor_name[][30]={"temperature","co2"};
 	//Definimos si queremos que se active un pin de salida ante una entrada concreta en el sensor 1
 #define PIN_OUTPUT 13
 	//Definimos el valor del sensor 1 para el cual activará el PIN_OUTPUT a HIGH
@@ -61,8 +62,8 @@ void setup() //configuración de arranque
 	pinMode(PIN_PWKEY, OUTPUT);
 	pinMode(PIN_RST, OUTPUT);
 
-  for(int8_t i=0; i<sizeof(sensors_pin); i++)
-    pinMode(sensors_pin[i], INPUT);
+  for(int8_t i=0; i<SENSOR_NUMBER; i++)
+    pinMode(sensor_pin[i], INPUT);
 	
 ///////////// !!! CUIDAO CON ESTE RESET EN SIM800L : ( -> y en el constructor de la librería también lo hace! )
 	//#if USE_GPS == true	
@@ -79,52 +80,58 @@ void setup() //configuración de arranque
 	b->vector destino
 	bb->cadena
 */
-void build_status_array(uint8_t *i, char **a, char *aa, char **b, char *bb)
+void build_status_array(uint8_t *i, char a[][STATUS_CHAR_LIMIT], char *aa, char b[][STATUS_CHAR_LIMIT], char *bb)
 {
-	strlcpy(a[i],aa,sizeof(a[i]));
-	strlcpy(b[i],bb,sizeof(b[i]));
+	strlcpy(a[*i],aa,sizeof(a[*i]));
+	strlcpy(b[*i],bb,sizeof(b[*i]));
 	*i++;
 }
 
 void loop()
 {
 	bool http_post_correct;
-	uint8_t sensor_value[sizeof(sensors_pin)];
+	uint8_t sensor_value[SENSOR_NUMBER];
 	uint8_t sensor_number_str_buffer[2]; //pondremos un valor máximo de sensores de 2 cifras (99 sin contar el 0), a pesar de estar limitados a los pines que nos sobren del micro.
-	uint8_t sensor_value_str_buffer[4];  //leemos el sensor con resolución de 10 bits, como máximo será un valor de 1024 (4 caracteres)
+	char sensor_value_str_buffer[4];  //leemos el sensor con resolución de 10 bits, como máximo será un valor de 1024 (4 caracteres)
 	char sim_unlock_pin[4]={NULL,NULL,NULL,NULL};
 	#ifdef UNLOCK_PIN
 		strlcpy(sim_unlock_pin,UNLOCK_PIN,sizeof(4);
 	#endif
 
-	char status_name[SEND_STATUS][STATUS_CHAR_LIMIT];
-	char status_data[SEND_STATUS][STATUS_CHAR_LIMIT];
+  char status_name[SEND_STATUS+2][STATUS_CHAR_LIMIT]; //+2 del gps (latitud,longitud)
+  char status_data[SEND_STATUS+2][STATUS_CHAR_LIMIT];
 	uint8_t total_status;
-	uint8_t current_status;
-	char[3] satellites; 	//opcional
-	char[3] battery; 		//opcional
+	char satellites[3]; 	//opcional
+	char battery[3]; 		//opcional
 	
-	ModuleManager ASDAS(ID,SERVER_ADDRESS,USE_GPS,DEBUG_MODE,PIN_PWKEY,PIN_RST,sim_unlock_pin,GPRS_APN,GPRS_USER,GPRS_PASS);
+	ModuleManager ASDAS(PASSWD,ID,SERVER_ADDRESS,USE_GPS,DEBUG_MODE,PIN_PWKEY,PIN_RST,sim_unlock_pin,GPRS_APN,GPRS_USER,GPRS_PASS);
 	//Sim ASDAS(SERVER_ADDRESS,USE_GPS,DEBUG_MODE, UNLOCK_PIN); // <- si tenemos código pin configurado en la tarjeta, usaremos esta inicialización de clase
 	
 	if(USE_GPS)
+	{
 		delay(120000); // dos minutos de espera para que coja señal gps
-	
+    if(DEBUG_MODE)Serial.println(F("Waiting 2 minutes for the gps signal..."));
+	}
+ 
 	/*módulo arrancado, conectado a red y a gps*/
 	
 	while( ASDAS.is_full_connected() )	//hasta que no se vuelva a verificar la conexión, se mantendrá dentro del bucle para no resetear el módulo al inicializar la clase Sim.
 	{
-
+    if(DEBUG_MODE)Serial.println(F("[+]Connected to 2g"));
+    
 		while( ASDAS.data_waiting_in_sd() )	//mientras haya líneas en el fichero de almacenamiento
 		{
 			if(!ASDAS.send_last_sd_line())	//las envía, si falla al enviar se sale
 				break;
 		}
 
+  if(DEBUG_MODE)Serial.println(F("Reading sensors..."));
 	//Toma los valores de los sensores
-		for(uint8_t i=0; i<sizeof(sensors_pin); i++)
+		for(uint8_t i=0; i<SENSOR_NUMBER; i++)
 		{
-			sensor_value[i]=ASDAS.get_sensor_value(sensors_pin[i]);
+			sensor_value[i]=ASDAS.get_sensor_val(sensor_pin[i]);
+
+      if(DEBUG_MODE){ Serial.println(F("")); Serial.print(F("[+]Sensor: ")); Serial.print(sensor_name[i]); Serial.print(F(" value: ")); Serial.print(sensor_value[i]); Serial.println(F("")); }
 			
 			#ifdef PIN_OUTPUT
 				if(i==0 && sensor_value[i]>SENSOR1_THRESHOLD)
@@ -149,8 +156,10 @@ void loop()
 			ASDAS.get_gps();
 	
 	//Envía los datos obtenidos de los sensores
+    if(DEBUG_MODE)Serial.println(F("Sending sensor data..."));
+	
 		http_post_correct=true;	//la tomamos por buena desde el principio para que quede como falsa en cualquiera de las peticiones que llegasen a dar error en toda la iteración.
-		for(uint8_t sensor_number=0; sensor_number<sizeof(sensors_pin); sensor_number++)
+		for(uint8_t sensor_number=0; sensor_number<SENSOR_NUMBER; sensor_number++)
 		{
 		//convertimos en cadena de caracteres el valor del sensor				<a--- meterlo para devolver en una función en la clase Sensores
 			itoa(sensor_value[sensor_number],sensor_value_str_buffer,10);
@@ -162,45 +171,45 @@ void loop()
 				http_post_correct = false;
 			}
 		}
+
+  //Envía los estados y ubicación
+    if(DEBUG_MODE)Serial.println(F("Sending status data..."));
 		if( (SEND_STATUS || USE_GPS) )
 		{
+			total_status=0;
+      
 			if (SEND_STATUS) //aquí rellenamos el array de status_data si queremos mandar más datos adicionales (porcentaje de batería, satélites detectados, errores...)
 			{
-				current_status=0;
-				//OPCIONAL (estatus de la batería)
+				  //OPCIONAL (estado de la batería)
 				itoa( ASDAS.battery_left(), battery, 10 );
-				build_status_array( &current_status, status_name, "battery" , status_data, battery);
-				
+				build_status_array( &total_status, status_name, "battery" , status_data, battery);
 				/* 
-				
-				//OPCIONAL (satélites encontrados)
-
+				  //OPCIONAL (satélites encontrados)
 				itoa( ASDAS.get_satellites_found(), satellites, 10 );
-				build_status_array( &current_status,  status_name, "satellites", status_data, satellites  );
+				build_status_array( &total_status,  status_name, "satellites", status_data, satellites  );
 			
-				//OPCIONAL (error encontrado al activar un flag)
-			
+				  //OPCIONAL (error encontrado al activar un flag)
 				if(flag_error_example1 || flag_error_example2 || flag_error_example3 )
 				{
-					build_status_array( &current_status, status_name, "error", status_data, error_content );
+					build_status_array( &total_status, status_name, "error", status_data, error_content );
 				}
 				*/
-				
-				if(USE_GPS)
-				{
-					build_status_array( &current_status, status_name,"lat", status_data, "" );
-					build_status_array( &current_status, status_name,"lon", status_data, "" );
-				}
 			}
-			
-			//total_status=SEND_STATUS+USE_GPS;
-			total_status=current_status+USE_GPS;	//<- por seguridad no usaremos la constante de SEND_STATUS para contar los parámetros a enviar sino los sumados al recorrer el código de parámetros activados de estado
+
+		  if(USE_GPS)
+		  {
+			  //build_status_array( &total_status, status_name, "lat", status_data[SEND_STATUS], "" );  //escribimos en el hueco SEND_STATUS porque es el valor de estados a mandar sin gps (si es 0 escribe en el estado 1, y si son 2, escribe en el estado 3 )
+			  //build_status_array( &total_status, status_name, "lon", status_data[SEND_STATUS+1], "" );
+			  build_status_array( &total_status, status_name, "lat", status_data, "" );
+			  build_status_array( &total_status, status_name, "lon", status_data, "" );
+		  }
 			
 			for( uint8_t status_count=0; status_count<total_status; status_count++ )
 			{
 				if(http_post_correct)
 				{
-					if( !ASDAS.send_aditional_data_to_server(status_name[status_count],status_data[status_count]) )
+					http_post_correct = ASDAS.send_aditional_data_to_server(status_name[status_count],status_data[status_count]);
+					if( !http_post_correct )
 						ASDAS.save_aditional_data_in_sd(status_name[status_count],status_data[status_count]);
 				}
 				else
@@ -208,6 +217,8 @@ void loop()
 			}
 		}
 
+    if(DEBUG_MODE)Serial.println(F(" * * * END!!! - Waiting 60 seconds..."));
+    
 		delay(60);	//cambiar por una espera medida
 		
 // !!! APAGAMOS (gps y/o gprs) ??? ->>>>>>
