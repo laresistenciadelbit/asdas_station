@@ -4,7 +4,7 @@
 
 #include "ModuleManager.h"
 
-ModuleManager::ModuleManager(const char* passwd, const char *id, const char *server, const bool gps, const bool debug, const int8_t pwkey, const int8_t rst ,char *pin, char *apn, char *user, char *pass)
+ModuleManager::ModuleManager(const char* passwd, const char *id, const char *server, const bool gps, const bool debug, const int8_t pwkey, const int8_t rst ,char *pin, char *apn, char *apn_user, char *apn_pass)
 {
 	strlcpy(this->station_id,id,sizeof(id));
 	//strlcpy(this->password,passwd,sizeof(passwd));
@@ -13,10 +13,10 @@ ModuleManager::ModuleManager(const char* passwd, const char *id, const char *ser
 	strcat(this->server_address,passwd);
 
 	strcpy(this->gprs_apn,apn);
-	if(user!=NULL)
+	if(apn_user!=NULL)
 	{
-		strcpy(this->gprs_user,user);
-		strcpy(this->gprs_pass,pass);
+		strcpy(this->gprs_user,apn_user);
+		strcpy(this->gprs_pass,apn_pass);
 	}
   
 	if(pin[0]!=NULL)
@@ -57,13 +57,13 @@ ModuleManager::ModuleManager(const char* passwd, const char *id, const char *ser
 	this->sim_module->powerOnOff(true);
     this->sim_module->init(); 
 	
-  if (gps)
-  {
-    this->use_gps=true;
-    sim_module->powerOnOffGps(true);
-  }
-  else
-    this->use_gps=false;
+	if (gps)
+	{
+		this->use_gps=true;
+		sim_module->powerOnOffGps(true);
+	}
+	else
+		this->use_gps=false;
     
 	if( connect_network(0) )
 	{
@@ -181,7 +181,7 @@ void ModuleManager::get_gps(void)
 {
 	float f_lat,f_lon,satellites;
 		
-	sim_module->powerOnOffGps(true); //lo encendemos si lo habíamos apagado
+	//sim_module->powerOnOffGps(true); //lo encendemos si lo habíamos apagado
 
 	this->gps_position_found=false;
 	for(int i=0; i<3 && !this->gps_position_found; i++)//LOOP de 3 intentos con delays de 60/3 segundos (1 minuto aprox. para encontrar gps's si ha perdido todos los satélites)
