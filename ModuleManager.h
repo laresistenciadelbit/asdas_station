@@ -40,25 +40,31 @@ class ModuleManager
 		bool connection_successful;
 		bool debug_mode;
 		
+		//FUNCTIONS:
+		
+		bool connect_network(uint8_t);
+		bool connect_gprs(uint8_t);
+		
+		void insert_json_parameter(char *, char *, char *);
+		void generate_json_parameters(char *, char *, char *, char *);
+		void generate_aditional_json_parameters(char *, char *, char *, char *);
+		bool send_http_post(char *);
+		void write_sd(char *);
+		
 	public:
 		ModuleManager(const char* passwd, const char *id, const char *server, const bool gps, const bool debug, const int8_t pwkey, const int8_t rst ,char *pin, char *apn, char *user, char *pass);
 
 		bool is_full_connected(void);
-		bool connect_network(uint8_t);
-		bool connect_gprs(uint8_t);
+		
 		void unlock_sim(void);
 		uint8_t battery_left(void);
 		uint8_t get_satellites_found(void);
 		void get_gps(void);
 		void get_time(void);
 		int8_t get_sensor_val(uint8_t);
-   
-		void insert_json_parameter(char *, char *, char *);
-		void generate_json_parameters(char *, char *, char *, char *);
-		void generate_aditional_json_parameters(char *, char *, char *, char *);
+
 		bool send_data_to_server(char *, char *);
 		bool send_aditional_data_to_server(char *,char *);
-		bool send_http_post(char *);
 
 		void save_data_in_sd(char *, char *);
 		void save_aditional_data_in_sd(char *,char *);

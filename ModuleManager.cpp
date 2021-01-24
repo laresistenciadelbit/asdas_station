@@ -230,13 +230,6 @@ void ModuleManager::generate_json_parameters(char *buffer, char sensor_name[], c
 	insert_json_parameter("sensor_name",sensor_name, buffer);
 	insert_json_parameter("time",time, buffer);
 	insert_json_parameter("sensor_val",sensor_val, buffer);
-/*
-	if(this->use_gps && gps_position_found)
-	{
-		insert_json_parameter("lat",this->lat, buffer);
-		insert_json_parameter("lon",this->lon, buffer);
-	}
-*/
 	strlcpy(parameters_buffer,"}",PARAMETERS_SIZE);
 }
 
@@ -249,13 +242,13 @@ void ModuleManager::generate_aditional_json_parameters(char *buffer, char time[]
 	
 	if( ( strcmp(status_name,"lat")==0 || strcmp(status_name,"lon")==0 ) && this->use_gps )
 	{
-    if(this->gps_position_found)
-    {
-      if( strcmp(status_name,"lat")==0 )
-  		  insert_json_parameter("lat",this->lat, buffer);
-       else
-        insert_json_parameter("lon",this->lon, buffer);
-    }
+		if(this->gps_position_found)
+		{
+		  if( strcmp(status_name,"lat")==0 )
+			  insert_json_parameter("lat",this->lat, buffer);
+		   else
+			insert_json_parameter("lon",this->lon, buffer);
+		}
 	}
 	else
 	{
@@ -298,20 +291,13 @@ bool ModuleManager::send_http_post(char *parameters_buffer)
 	return (responseCode==200);	// !!! <-- ¿en todo caso devolvería 200 en string?
 }
 
-void ModuleManager::save_data_in_sd(char sensor_name[], char sensor_val[])
+void ModuleManager::write_sd(char parameters_buffer[])
 {
-	char parameters_buffer[PARAMETERS_SIZE];
-	
 	myFile = SD.open(this->file_name, FILE_WRITE);
 	if (myFile) 
 	{
 		if(this->debug_mode) 
-			Serial.println(F("[+]{save_data_in_sd} writing to test.txt..."));
-		
-		generate_json_parameters(parameters_buffer, sensor_name, this->current_time, sensor_val);
-		
-		//myFile.println("1,2020/09/28_20:25+2,0.38651,-0.571498,101.77");
-		//myFile.println("1,2020/09/28_20:38+2,0.38637,-0.571411,134.22");
+			Serial.println(F("[+]{save_data_in_sd} writing to test.txt..."));		
 		myFile.println(parameters_buffer);
 		myFile.close();
 
@@ -322,32 +308,23 @@ void ModuleManager::save_data_in_sd(char sensor_name[], char sensor_val[])
 	{
 		if(this->debug_mode) 
 			Serial.println(F("[-]{save_data_in_sd} error opening file for WRITE"));
-	}
+	}	
+}
+
+void ModuleManager::save_data_in_sd(char sensor_name[], char sensor_val[])
+{
+	char parameters_buffer[PARAMETERS_SIZE];
+	
+	generate_json_parameters(parameters_buffer, sensor_name, this->current_time, sensor_val);
+	this->write_sd(parameters_buffer);
 }
 
 void ModuleManager::save_aditional_data_in_sd(char status_name[],char status_val[])
 {
 	char parameters_buffer[PARAMETERS_SIZE];
 	
-	myFile = SD.open(this->file_name, FILE_WRITE);
-	if (myFile) 
-	{
-		if(this->debug_mode) 
-			Serial.println(F("[+]{save_aditional_data_in_sd} writing to test.txt..."));
-		
-		generate_aditional_json_parameters(parameters_buffer, this->current_time, status_name, status_val);
-		
-		myFile.println(parameters_buffer);
-		myFile.close();
-
-		if(this->debug_mode)
-			Serial.println(F("[+]{save_aditional_data_in_sd} done writting."));
-	}
-	else
-	{
-		if(this->debug_mode) 
-			Serial.println(F("[-]{save_aditional_data_in_sd} error opening file for WRITE"));
-	}
+	generate_aditional_json_parameters(parameters_buffer, this->current_time, status_name, status_val);
+	this->write_sd(parameters_buffer);
 }
 
 
