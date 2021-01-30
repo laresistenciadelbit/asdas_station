@@ -35,7 +35,7 @@ class ModuleManager
 		char lon[10];
 		char sat[3];
 		
-		char current_time[20]; //almacenamos el tiempo de adquisición de los sensores
+		char current_time[22]; //almacenamos el tiempo de adquisición de los sensores (tamaño de 20 caracteres)
 		
 		bool connection_successful;
 		bool debug_mode;

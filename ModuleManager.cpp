@@ -6,56 +6,68 @@
 
 ModuleManager::ModuleManager(const char* passwd, const char *id, const char *server, const bool gps, const bool debug, const int8_t pwkey, const int8_t rst ,char *pin, char *apn, char *apn_user, char *apn_pass)
 {
-	strlcpy(this->station_id,id,sizeof(id));
-	//strlcpy(this->password,passwd,sizeof(passwd));
-	strlcpy(this->server_address,server,sizeof(server));
+	strcpy(this->station_id,id);
+	strcpy(this->server_address,server);
 	strcat(this->server_address,"/?pw=");
 	strcat(this->server_address,passwd);
 
 	strcpy(this->gprs_apn,apn);
-	if(apn_user!=NULL)
+	if(apn_user[0]!=0)
 	{
 		strcpy(this->gprs_user,apn_user);
 		strcpy(this->gprs_pass,apn_pass);
+	} else {
+    this->gprs_user[0]=0;
+    this->gprs_pass[0]=0;
 	}
   
-	if(pin[0]!=NULL)
+	if(pin[0]!=0)
 	{
 		strlcpy(this->sim_pin,pin,4);
 	}
 	else
-		this->sim_pin[0]=NULL;
+		this->sim_pin[0]=0;
 
 	if (debug)
 		this->debug_mode=true;
 	else
 	  this->debug_mode=false;
-      
+   
+//Inicializamos comunicación con el pc solo para debugging
+  if (this->debug_mode)
+  {
+    Serial.begin(115200); //iniciamos el puerto de comunicación del microcontrolador (recomendado >9600 y <115200)
+                            while (!Serial) {;}
+    delay(10);
+    Serial.println(F("Loading ModuleManager..."));
+    Serial.println(this->server_address);
+  }
+        
 // Inicializamos módulos
 
 	// Inicializamos módulo micro SD
-	if (!SD.begin(SS))
+	if (!SD.begin(10))  //Pin ss está definido como pin 10
+  {
 		if(this->debug_mode)
 			Serial.println(F("[-]SD initialization failed!"));
+  }
 	else
+  {
 		if(this->debug_mode)
 			Serial.println(F("[+]SD initialization done."));
-
-	//Inicializamos comunicación con el pc solo para debugging
-	if (this->debug_mode)
-	{
-		Serial.begin(115200); //iniciamos el puerto de comunicación del microcontrolador (recomendado >9600 y <115200)
-//		Log.begin(LOG_LEVEL_NOTICE, &Serial);
-		delay(10);
-	}
-	
-  //Inicializamos comunicación en serie desde microcontrolador a módulo sim
+  }
+  
+//Inicializamos comunicación en serie desde microcontrolador a módulo sim
 	Serial1.begin(9600);	//iniciamos la vía de comunicación con el módulo sim
 	
-	this->sim_module = new SIM8xx(pwkey,rst);//SIM_RST, SIM_PWR);   // <- arduino no permite instanciar clases, por lo que creamos la clase SIM8xx y la inicializamos directamente desde la definicion de esta clase (en ModuleManager.h)
+	if(this->debug_mode)
+			Serial.println(F("Starting Sim8xx..."));
+      
+	delay(1000);	
+	this->sim_module = new SIM8xx(rst,pwkey);//SIM_RST, SIM_PWR);   // <- arduino no permite instanciar clases, por lo que creamos la clase SIM8xx y la inicializamos directamente desde la definicion de esta clase (en ModuleManager.h)
 	this->sim_module->begin(Serial1);
 	this->sim_module->powerOnOff(true);
-    this->sim_module->init(); 
+  this->sim_module->init(); 
 	
 	if (gps)
 	{
@@ -117,32 +129,35 @@ bool ModuleManager::connect_gprs(uint8_t intento=0)
 	
 	// GPRS connection parameters are usually set after network registration
 	if(this->debug_mode)Serial.print(S_F("[*]Connecting to 2g network"));
+ 
+    sim_module->disableGprs(); //forzamos la desconexión de la red por si lo estuviera, ya que el comando AT CIPSHUT no parece cerrar la conexión correctamente
+    
     if (!sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass))
     {
-      if(debug_mode)Serial.println(S_F(" [-]Fail"));
+      if(this->debug_mode)Serial.println(S_F(" [-]Fail"));
       delay(8500);
 
       //reintentamos recursivamente antes de reiniciar:
-		if(intento>3)
-			return_status=false;//resetSoftware();
-		else
-		{
-			delay(8500);
-			connect_gprs(intento+1);	//recursivo
-		}
+  		if(intento>3)
+  			return_status=false;//resetSoftware();
+  		else
+  		{
+  			delay(8500);
+  			connect_gprs(intento+1);	//recursivo
+  		}
     } 
-	else
-	{
-		return_status=true;
-		if(this->debug_mode)Serial.println("[+]GPRS connected");
-	}
-	return return_status;
+  	else
+  	{
+  		return_status=true;
+  		if(this->debug_mode)Serial.println("[+]GPRS connected");
+  	}
+	  return return_status;
 }
 
 void ModuleManager::unlock_sim(void)
 {
   
-    if ( this->sim_pin[0] != NULL )	//si se definió pin de la tarjeta sim, se desbloquea
+    if ( this->sim_pin[0] != 0 )	//si se definió pin de la tarjeta sim, se desbloquea
     {
       sim_module->getSimState(parameters_buffer, PARAMETERS_SIZE);
       
@@ -163,7 +178,7 @@ void ModuleManager::get_time(void/*char *clock_output*/) //tomamos la hora del r
 	//formato: "20/09/20,04:23:58+08" el 08 es el timezone en cuartos de hora, así que hay que dividirlo entre 4 para que sea el equivalente a 1 hora, así obtendríamos nuestro +2 oficial (pero hay que recordar que la hora ya está con el +2 incluído, así que tal vez debiéramos restarle el +2 a la hora para sumarselo en el servidor al huso horario configurado en él)
 	sim_module->getInternalClock(this->current_time);	//<- anteriormente lo devolvíamos al main, ahora lo gestionamos desde la clase
 
-  if(this->debug_mode) {Serial.println(F("[*]Getting time...")); Serial.println(this->current_time); }
+  if(this->debug_mode) {Serial.println(F("[*]Getting clock...:")); Serial.println(this->current_time); }
 }
 
 uint8_t ModuleManager::battery_left(void)	
@@ -215,28 +230,28 @@ void ModuleManager::get_gps(void)
 void ModuleManager::insert_json_parameter(char *var_name,char *var_value,char *buffer)
 {
 	//ejemplo:  "{\"name\": \"morpheus\", \"job\": \"leader\"}";
-	strlcpy(buffer,"\"",PARAMETERS_SIZE);
-	strlcpy(buffer,var_name,PARAMETERS_SIZE);
-	strlcpy(buffer,"\": \"",PARAMETERS_SIZE);
-	strlcpy(buffer,var_value,PARAMETERS_SIZE);
-	strlcpy(buffer,"\", ",PARAMETERS_SIZE);
+	strcat(buffer,"\"");
+	strcat(buffer,var_name);
+	strcat(buffer,"\":\"");
+	strcat(buffer,var_value);
+	strcat(buffer,"\",");
 }
 
 void ModuleManager::generate_json_parameters(char *buffer, char sensor_name[], char time[], char sensor_val[])
 {
 	//Concatenamos los parámetros
-	strlcpy(buffer,"{",PARAMETERS_SIZE);
+	strcpy(buffer,"{");
 	insert_json_parameter("station_id",this->station_id, buffer);
 	insert_json_parameter("sensor_name",sensor_name, buffer);
 	insert_json_parameter("time",time, buffer);
 	insert_json_parameter("sensor_val",sensor_val, buffer);
-	strlcpy(parameters_buffer,"}",PARAMETERS_SIZE);
+  buffer[strlen(buffer)-1]=0x7D;//sustituímos la última , por } de cierre , solo funciona en hexadecimal, no sabría decir por qué
 }
 
 void ModuleManager::generate_aditional_json_parameters(char *buffer, char time[], char status_name[], char status_val[])
 {
 	//Concatenamos los parámetros
-	strlcpy(buffer,"{",PARAMETERS_SIZE);
+	strcpy(buffer,"{");
 	insert_json_parameter("station_id",this->station_id, buffer);
 	insert_json_parameter("time",time, buffer);
 	
@@ -255,7 +270,7 @@ void ModuleManager::generate_aditional_json_parameters(char *buffer, char time[]
 		insert_json_parameter(status_name,status_val, buffer);
 	}
 	
-	strlcpy(parameters_buffer,"}",PARAMETERS_SIZE);
+	buffer[strlen(buffer)-1]=0x7D;//sustituímos la última , por } de cierre
 }
 
 bool ModuleManager::send_data_to_server(char sensor_name[], char sensor_val[])
@@ -280,13 +295,17 @@ bool ModuleManager::send_http_post(char *parameters_buffer)
 {
 	uint16_t responseCode;
 
-  if(this->debug_mode)
-    {Serial.println(F("[+]HTTP PARAMETERS: ")); Serial.print(F("\t")); Serial.println(parameters_buffer);}
+	if(this->debug_mode)
+		{Serial.println("");Serial.print(F("[+]HTTP PARAMETERS: ")); Serial.print(F("\t")); Serial.print(parameters_buffer);}
 	
 	responseCode = sim_module->httpPost(this->server_address, S_F("application/json"), parameters_buffer, parameters_buffer, BUFFER_SIZE);
 
-  if(this->debug_mode)
-    {Serial.println(F("[+]Server response code: "));Serial.println(parameters_buffer);}
+	if(this->debug_mode)
+	{
+		Serial.println("");
+		Serial.print(F("[+]Server response : "));Serial.print(parameters_buffer);Serial.println("");
+		Serial.println(F("[+]Server response code: "));Serial.print(responseCode);Serial.println("");Serial.println("");
+	}
     
 	return (responseCode==200);	// !!! <-- ¿en todo caso devolvería 200 en string?
 }

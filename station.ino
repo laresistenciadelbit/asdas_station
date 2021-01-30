@@ -15,19 +15,19 @@
 	//Definimos cuantas estadísticas queremos enviar (sin contar la localización gps)
 #define SEND_STATUS 1
 	//Definimos si estamos en modo depuración o no
-#define DEBUG_MODE true
+#define DEBUGGING true
 	//Definimos el código pin si la tarjeta lo tiene activo
 //#define UNLOCK_PIN "0000";
 	//Definimos los credenciales del APN para el uso de GPRS
 #define GPRS_APN    "internet"
-#define GPRS_USER   NULL
-#define GPRS_PASS   NULL
+#define GPRS_USER   ""
+#define GPRS_PASS   ""
 	//pines que usaremos (pines RX y TX dedicados)( RST Y PWKEY para algunos modelos de sim808 y sim7600e )
-#define PIN_RX 		8
-#define PIN_TX 		9
+//#define PIN_RX 		0   USAMOS Serial1 que es puerto de serie por hardware, siempre són los pines 0 y 1 (RXI y TX0) en arduino pro micro
+//#define PIN_TX 		1
 
-#define PIN_PWKEY	7
-#define PIN_RST		6
+#define PIN_RST    7
+#define PIN_PWKEY	6
 
   //Definimos los pines de los sensores que queremos leer (podemos poner tantos como queramos. *el límite son los pines y la memoria)
 #define SENSOR_NUMBER 2
@@ -45,8 +45,8 @@ const char sensor_name[][30]={"temperature","co2"};
 	//definimos un límite de caracteres para el envío de estado
 #define STATUS_CHAR_LIMIT 14
 
-	//Definimos cada cuantos segundos leerá y mandará la información de los sensores
-#define WORKING_INTERVAL 60
+	//Definimos cada cuantos minutos leerá y mandará la información de los sensores
+#define WORKING_INTERVAL 10
 	//Definimos cuántas veces leerá e intentará enviar la información antes de resetear el microcontrolador por incapacidad de conexión para que reinicie todos los módulos
 #define SIM_TIMEOUT_THRESHOLD 5
 
@@ -58,7 +58,7 @@ const char sensor_name[][30]={"temperature","co2"};
 #include "ModuleManager.h"
 
 void setup() //configuración de arranque
-{
+{   
 	// configuramos los pines de salida
 	#ifdef PIN_OUTPUT
 		pinMode(PIN_OUTPUT, OUTPUT);
@@ -110,32 +110,32 @@ void loop()
 	
 	uint8_t sim_timeout_counter=0;
 	bool reset_modules=false;
-	
-	ModuleManager ASDAS(PASSWD,ID,SERVER_ADDRESS,USE_GPS,DEBUG_MODE,PIN_PWKEY,PIN_RST,sim_unlock_pin,GPRS_APN,GPRS_USER,GPRS_PASS);
-	//Sim ASDAS(SERVER_ADDRESS,USE_GPS,DEBUG_MODE, UNLOCK_PIN); // <- si tenemos código pin configurado en la tarjeta, usaremos esta inicialización de clase
+			
+	ModuleManager ASDAS(PASSWD,ID,SERVER_ADDRESS,USE_GPS,DEBUGGING,PIN_PWKEY,PIN_RST,sim_unlock_pin,GPRS_APN,GPRS_USER,GPRS_PASS);
+	//Sim ASDAS(SERVER_ADDRESS,USE_GPS,DEBUGGING, UNLOCK_PIN); // <- si tenemos código pin configurado en la tarjeta, usaremos esta inicialización de clase
 	
 	if(USE_GPS)
 	{
 		delay(120000); // dos minutos de espera al arranque para que coja señal gps
-		if(DEBUG_MODE)
+		if(DEBUGGING)
 			Serial.println(F("Waiting 2 minutes for the gps signal..."));
 	}
  
 	/*módulo arrancado, conectado a red y a gps*/
-	if(DEBUG_MODE && ASDAS.is_full_connected())
+	if(DEBUGGING && ASDAS.is_full_connected())
 		Serial.println(F("[+]Connected to 2g"));
 	
 	
 	while(!reset_modules)
 	{
 	
-		if(DEBUG_MODE)Serial.println(F("Reading sensors..."));
+		if(DEBUGGING)Serial.println(F("Reading sensors..."));
 		//Toma los valores de los sensores
 		for(uint8_t i=0; i<SENSOR_NUMBER; i++)
 		{
 			sensor_value[i]=ASDAS.get_sensor_val(sensor_pin[i]);
 
-			if(DEBUG_MODE){ Serial.println(F("")); Serial.print(F("[+]Sensor: ")); Serial.print(sensor_name[i]); Serial.print(F(" value: ")); Serial.print(sensor_value[i]); Serial.println(F("")); }
+			if(DEBUGGING){ Serial.println(F("")); Serial.print(F("[+]Sensor: ")); Serial.print(sensor_name[i]); Serial.print(F(" value: ")); Serial.print(sensor_value[i]); Serial.println(F("")); }
 			
 			#ifdef PIN_OUTPUT
 				if(i==0 && sensor_value[i]>SENSOR1_THRESHOLD)
@@ -156,10 +156,15 @@ void loop()
 		ASDAS.get_time();
 		
 	//Toma la posición gps
+    if(DEBUGGING && USE_GPS)
+        Serial.println(F("Obtaining GPS location..."));
 		if(USE_GPS)
 			ASDAS.get_gps();
 	
 
+    if(DEBUGGING)
+        Serial.println(F("Looking for data in the SD buffer..."));
+        
 		if( ASDAS.is_full_connected() )	//hasta que no se vuelva a verificar la conexión, se mantendrá dentro del bucle para no resetear el módulo al inicializar la clase Sim.
 		{
 			
@@ -172,7 +177,7 @@ void loop()
 
 		
 		//Envía los datos obtenidos de los sensores
-			if(DEBUG_MODE)
+			if(DEBUGGING)
 				Serial.println(F("Sending sensor data..."));
 			http_post_correct=true;	//la tomamos por buena desde el principio para que quede como falsa en cualquiera de las peticiones que llegasen a dar error en toda la iteración.
 			for(uint8_t sensor_number=0; sensor_number<SENSOR_NUMBER; sensor_number++)
@@ -189,7 +194,7 @@ void loop()
 			}
 
 		//Envía los estados y ubicación
-			if(DEBUG_MODE)
+			if(DEBUGGING)
 				Serial.println(F("Sending status data..."));
 			if( (SEND_STATUS || USE_GPS) )
 			{
@@ -235,9 +240,12 @@ void loop()
 			}
 		}
 	
-		if(DEBUG_MODE)
-			Serial.println(F(" * * * END!!! - Waiting <<WORKING_INTERVAL>> seconds..."));
-		delay(WORKING_INTERVAL*1000);
+		if(DEBUGGING)
+			{Serial.print(F("\n * * * END!!! - Waiting ")); Serial.print(WORKING_INTERVAL); Serial.print(F("minutes...\n"));}
+
+    for(uint8_t i=0;i<WORKING_INTERVAL;i++)
+        for(uint8_t j=0;j<60;j++)
+		      delay(1000);
 		
 		if(!ASDAS.is_full_connected())
 		{
@@ -253,7 +261,7 @@ void loop()
 	// !!! APAGAMOS (gps y/o gprs) ??? ->>>>>>
 	//		ASDAS.gprsDisconnect();
 	//    ASDAS.gpsDisconnect();
-	//		if(DEBUG_MODE)Serial.println(F("Radios disconnected"));
+	//		if(DEBUGGING)Serial.println(F("Radios disconnected"));
 
 	// !!! PONEMOS EN MODO AHORRO DE ENERGÍA ??? 
 
