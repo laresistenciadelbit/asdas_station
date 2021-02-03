@@ -124,15 +124,19 @@ bool ModuleManager::connect_network(uint8_t intento=0)
 bool ModuleManager::connect_gprs(uint8_t intento=0)
 {
 	bool return_status;
+  SIM8xxNetworkRegistrationState network_status;
 	
 	this->unlock_sim(); //solo desbloquea en caso de que no se haya desbloqueado (que ya debería estarlo)
 	
 	// GPRS connection parameters are usually set after network registration
 	if(this->debug_mode)Serial.print(S_F("[*]Connecting to 2g network"));
- 
-    sim_module->disableGprs(); //forzamos la desconexión de la red por si lo estuviera, ya que el comando AT CIPSHUT no parece cerrar la conexión correctamente
+
     
-    if (!sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass))
+//    sim_module->disableGprs(); //forzamos la desconexión de la red por si lo estuviera, ya que el comando AT CIPSHUT no parece cerrar la conexión correctamente
+    network_status = sim_module->getNetworkRegistrationStatus();
+    
+    //if (!sim_module->getGprsPowerState() && !sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass))  //si no estaba conectado y no se consigue conectar
+    if( static_cast<int8_t>(network_status) & (static_cast<int8_t>(SIM8xxNetworkRegistrationState::Roaming))==0  && !sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass)) //si no estaba conectado y no se consigue conectar
     {
       if(this->debug_mode)Serial.println(S_F(" [-]Fail"));
       delay(8500);
@@ -245,7 +249,7 @@ void ModuleManager::generate_json_parameters(char *buffer, char sensor_name[], c
 	insert_json_parameter("sensor_name",sensor_name, buffer);
 	insert_json_parameter("time",time, buffer);
 	insert_json_parameter("sensor_val",sensor_val, buffer);
-  buffer[strlen(buffer)-1]=0x7D;//sustituímos la última , por } de cierre , solo funciona en hexadecimal, no sabría decir por qué
+	buffer[strlen(buffer)-1]=0x7D;//sustituímos la última , por } de cierre , solo funciona en hexadecimal, no sabría decir por qué
 }
 
 void ModuleManager::generate_aditional_json_parameters(char *buffer, char time[], char status_name[], char status_val[])
@@ -255,21 +259,11 @@ void ModuleManager::generate_aditional_json_parameters(char *buffer, char time[]
 	insert_json_parameter("station_id",this->station_id, buffer);
 	insert_json_parameter("time",time, buffer);
 	
-	if( ( strcmp(status_name,"lat")==0 || strcmp(status_name,"lon")==0 ) && this->use_gps )
-	{
-		if(this->gps_position_found)
-		{
-		  if( strcmp(status_name,"lat")==0 )
-			  insert_json_parameter("lat",this->lat, buffer);
-		   else
-			insert_json_parameter("lon",this->lon, buffer);
-		}
+	if(  ( strcmp(status_name,"lat")!=0 && strcmp(status_name,"lon")!=0 ) || ( ( strcmp(status_name,"lat")==0 || strcmp(status_name,"lon")==0 ) && this->use_gps && this->gps_position_found ) )
+	{	//solo manda la ubicación si la encuentra
+		insert_json_parameter("status_name",status_name, buffer);
+		insert_json_parameter("status_val",status_val, buffer);
 	}
-	else
-	{
-		insert_json_parameter(status_name,status_val, buffer);
-	}
-	
 	buffer[strlen(buffer)-1]=0x7D;//sustituímos la última , por } de cierre
 }
 
@@ -316,7 +310,7 @@ void ModuleManager::write_sd(char parameters_buffer[])
 	if (myFile) 
 	{
 		if(this->debug_mode) 
-			Serial.println(F("[+]{save_data_in_sd} writing to test.txt..."));		
+			Serial.println(F("[+]{save_data_in_sd} writing to file..."));		
 		myFile.println(parameters_buffer);
 		myFile.close();
 
@@ -371,29 +365,30 @@ bool ModuleManager::send_last_sd_line()
 	{
 		while (this->myFile.available()) 
 		{
-		  if(this->debug_mode) 
-		    Serial.println(F("[*]reading line..."));
-       
-		  for(int i=0;i<PARAMETERS_SIZE;i++)
-		  {
-			line_buffer[i]=this->myFile.read();
-			if (line_buffer[i] == '\n') //ha llegado al fin de línea
+			if(this->debug_mode) 
+				Serial.println(F("[*]reading line..."));
+
+			for(int i=0;i<PARAMETERS_SIZE;i++)
 			{
-				line_buffer[i]='\0'; //nueva línea; fin de buffer
-				if(this->debug_mode)
-					Serial.println(line_buffer);
-				//no podemos almacenar en memoria todas las líneas para enviarlas, así que envíamos cada una en cuanto la lee
-				if ( !send_http_post(line_buffer) )
+				line_buffer[i]=this->myFile.read();
+				if (line_buffer[i] == '\n') //ha llegado al fin de línea
 				{
+					line_buffer[i]='\0'; //nueva línea; fin de buffer
 					if(this->debug_mode)
-						Serial.println(F("[-]error sending SD data to server"));
-					myFile.close();
-					return false;
+						Serial.println(line_buffer);
+					//no podemos almacenar en memoria todas las líneas para enviarlas, así que envíamos cada una en cuanto la lee
+					if(line_buffer[0]=="{" && line_buffer[strlen(line_buffer)-1] == "}")  //verificamos que esté correctamente formateada la línea
+					{
+						if ( !send_http_post(line_buffer) )
+						{
+							if(this->debug_mode)
+								Serial.println(F("[-]error sending SD data to server"));
+							myFile.close();
+							return false;
+						}
+					}
 				}
-			}
-		  }
-		  
-		  
+			} 
 		}
 		myFile.close();
 	}

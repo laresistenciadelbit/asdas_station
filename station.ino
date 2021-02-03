@@ -58,7 +58,7 @@ const char sensor_name[][30]={"temperature","co2"};
 #include "ModuleManager.h"
 
 void setup() //configuración de arranque
-{   
+{
 	// configuramos los pines de salida
 	#ifdef PIN_OUTPUT
 		pinMode(PIN_OUTPUT, OUTPUT);
@@ -88,7 +88,7 @@ void build_status_array(uint8_t *i, char a[][STATUS_CHAR_LIMIT], char *aa, char 
 {
 	strlcpy(a[*i],aa,sizeof(a[*i]));
 	strlcpy(b[*i],bb,sizeof(b[*i]));
-	*i++;
+	*i=*i+1;
 }
 
 void loop()
@@ -156,26 +156,23 @@ void loop()
 		ASDAS.get_time();
 		
 	//Toma la posición gps
-    if(DEBUGGING && USE_GPS)
-        Serial.println(F("Obtaining GPS location..."));
-		if(USE_GPS)
-			ASDAS.get_gps();
-	
+		if(DEBUGGING && USE_GPS)
+			Serial.println(F("Obtaining GPS location..."));
+			if(USE_GPS)
+				ASDAS.get_gps();
+		
 
-    if(DEBUGGING)
-        Serial.println(F("Looking for data in the SD buffer..."));
-        
+		if(DEBUGGING)
+			Serial.println(F("Looking for data in the SD buffer..."));
+			
 		if( ASDAS.is_full_connected() )	//hasta que no se vuelva a verificar la conexión, se mantendrá dentro del bucle para no resetear el módulo al inicializar la clase Sim.
 		{
-			
 			while( ASDAS.data_waiting_in_sd() )	//mientras haya líneas en el fichero de almacenamiento
 			{
 				if(!ASDAS.send_last_sd_line())	//las envía, si falla al enviar se sale
 					break;
+				delay(500);
 			}
-
-
-		
 		//Envía los datos obtenidos de los sensores
 			if(DEBUGGING)
 				Serial.println(F("Sending sensor data..."));
@@ -191,6 +188,7 @@ void loop()
 					ASDAS.save_data_in_sd(sensor_name[sensor_number], sensor_value_str_buffer);	//si la petición post devolvió error: escribe los datos del sensor a la tarjeta sd
 					http_post_correct = false;
 				}
+				delay(500);
 			}
 
 		//Envía los estados y ubicación
@@ -205,6 +203,7 @@ void loop()
 					  //OPCIONAL (estado de la batería)
 					itoa( ASDAS.battery_left(), battery, 10 );
 					build_status_array( &total_status, status_name, "battery" , status_data, battery);
+        
 					/* 
 					  //OPCIONAL (satélites encontrados)
 					itoa( ASDAS.get_satellites_found(), satellites, 10 );
@@ -217,14 +216,11 @@ void loop()
 					}
 					*/
 				}
-
-			  if(USE_GPS)
-			  {
-				  //build_status_array( &total_status, status_name, "lat", status_data[SEND_STATUS], "" );  //escribimos en el hueco SEND_STATUS porque es el valor de estados a mandar sin gps (si es 0 escribe en el estado 1, y si son 2, escribe en el estado 3 )
-				  //build_status_array( &total_status, status_name, "lon", status_data[SEND_STATUS+1], "" );
-				  build_status_array( &total_status, status_name, "lat", status_data, "" );
-				  build_status_array( &total_status, status_name, "lon", status_data, "" );
-			  }
+				if(USE_GPS)
+				{
+					build_status_array( &total_status, status_name, "lat", status_data, "" );
+					build_status_array( &total_status, status_name, "lon", status_data, "" );
+				}
 				
 				for( uint8_t status_count=0; status_count<total_status; status_count++ )
 				{
@@ -236,6 +232,8 @@ void loop()
 					}
 					else
 						ASDAS.save_aditional_data_in_sd(status_name[status_count],status_data[status_count]);
+           
+					delay(500);
 				}
 			}
 		}
@@ -243,11 +241,19 @@ void loop()
 		if(DEBUGGING)
 			{Serial.print(F("\n * * * END!!! - Waiting ")); Serial.print(WORKING_INTERVAL); Serial.print(F("minutes...\n"));}
 
-    for(uint8_t i=0;i<WORKING_INTERVAL;i++)
-        for(uint8_t j=0;j<60;j++)
-		      delay(1000);
-		
-		if(!ASDAS.is_full_connected())
+		for(uint8_t i=0;i<WORKING_INTERVAL;i++)
+		{
+			for(uint8_t j=0;j<60;j++)
+			{
+				  delay(1000);
+			  if(DEBUGGING && Serial.available() > 0 && Serial.read()=="!")
+				break;
+			}
+			if(DEBUGGING && Serial.available() > 0 && Serial.read()=="!")
+				break;
+		}
+			
+		if( !ASDAS.is_full_connected() || !http_post_correct ) //si no se consiguió conectar o falló al enviar alguna petición web
 		{
 			if(sim_timeout_counter == SIM_TIMEOUT_THRESHOLD)
 			{
@@ -257,18 +263,17 @@ void loop()
 			else
 				sim_timeout_counter++;
 		}
-			
-	// !!! APAGAMOS (gps y/o gprs) ??? ->>>>>>
-	//		ASDAS.gprsDisconnect();
-	//    ASDAS.gpsDisconnect();
-	//		if(DEBUGGING)Serial.println(F("Radios disconnected"));
+		if(http_post_correct)
+			sim_timeout_counter=0;
+				
+		// !!! APAGAMOS (gps y/o gprs) ??? ->>>>>>
+		//		ASDAS.gprsDisconnect();
+		//    ASDAS.gpsDisconnect();
+		//		if(DEBUGGING)Serial.println(F("Radios disconnected"));
 
-	// !!! PONEMOS EN MODO AHORRO DE ENERGÍA ??? 
+		// !!! PONEMOS EN MODO AHORRO DE ENERGÍA ??? 
 
-	// !!! DORMIMOS
-
-
-	
+		// !!! DORMIMOS
 	}
 
 }
