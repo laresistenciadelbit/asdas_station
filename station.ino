@@ -110,10 +110,14 @@ void loop()
 	
 	uint8_t sim_timeout_counter=0;
 	bool reset_modules=false;
+
+  unsigned long working_interval_mili=WORKING_INTERVAL*60L*1000L;
+  unsigned long previousMillis = millis();
+  unsigned long currentMillis = previousMillis; //las inicializamos igual puesto que arduino puede reiniciar el loop sin reinicializar los contadores
 			
 	ModuleManager ASDAS(PASSWD,ID,SERVER_ADDRESS,USE_GPS,DEBUGGING,PIN_PWKEY,PIN_RST,sim_unlock_pin,GPRS_APN,GPRS_USER,GPRS_PASS);
 	//Sim ASDAS(SERVER_ADDRESS,USE_GPS,DEBUGGING, UNLOCK_PIN); // <- si tenemos código pin configurado en la tarjeta, usaremos esta inicialización de clase
-	
+
 	if(USE_GPS)
 	{
 		delay(120000); // dos minutos de espera al arranque para que coja señal gps
@@ -122,13 +126,15 @@ void loop()
 	}
  
 	/*módulo arrancado, conectado a red y a gps*/
-	if(DEBUGGING && ASDAS.is_full_connected())
-		Serial.println(F("[+]Connected to 2g"));
-	
+	if(ASDAS.is_full_connected())
+  {
+    if(DEBUGGING)
+		  Serial.println(F("[+]Connected to 2g"));
+    delay(3000); //damos 3 segundos de estabilización
+  }
 	
 	while(!reset_modules)
 	{
-	
 		if(DEBUGGING)Serial.println(F("Reading sensors..."));
 		//Toma los valores de los sensores
 		for(uint8_t i=0; i<SENSOR_NUMBER; i++)
@@ -165,13 +171,13 @@ void loop()
 		if(DEBUGGING)
 			Serial.println(F("Looking for data in the SD buffer..."));
 			
-		if( ASDAS.is_full_connected() )	//hasta que no se vuelva a verificar la conexión, se mantendrá dentro del bucle para no resetear el módulo al inicializar la clase Sim.
+		if( ASDAS.is_full_connected() )
 		{
 			while( ASDAS.data_waiting_in_sd() )	//mientras haya líneas en el fichero de almacenamiento
 			{
 				if(!ASDAS.send_last_sd_line())	//las envía, si falla al enviar se sale
 					break;
-				delay(500);
+				delay(3000);
 			}
 		//Envía los datos obtenidos de los sensores
 			if(DEBUGGING)
@@ -188,7 +194,7 @@ void loop()
 					ASDAS.save_data_in_sd(sensor_name[sensor_number], sensor_value_str_buffer);	//si la petición post devolvió error: escribe los datos del sensor a la tarjeta sd
 					http_post_correct = false;
 				}
-				delay(500);
+				delay(3000);
 			}
 
 		//Envía los estados y ubicación
@@ -233,7 +239,7 @@ void loop()
 					else
 						ASDAS.save_aditional_data_in_sd(status_name[status_count],status_data[status_count]);
            
-					delay(500);
+					delay(3000);
 				}
 			}
 		}
@@ -241,7 +247,7 @@ void loop()
 		if(DEBUGGING)
 			{Serial.print(F("\n * * * END!!! - Waiting ")); Serial.print(WORKING_INTERVAL); Serial.print(F("minutes...\n"));}
 
-		for(uint8_t i=0;i<WORKING_INTERVAL;i++)
+		/*for(uint8_t i=0;i<WORKING_INTERVAL;i++)
 		{
 			for(uint8_t j=0;j<60;j++)
 			{
@@ -251,7 +257,19 @@ void loop()
 			}
 			if(DEBUGGING && Serial.available() > 0 && Serial.read()=="!")
 				break;
-		}
+		}*/
+
+    while (currentMillis - previousMillis < working_interval_mili)  //se mantiene en el bucle hasta que pase el tiempo de espera
+    {
+      if(DEBUGGING)
+        Serial.println("waiting...");
+      delay(1000);
+      currentMillis = millis();
+Serial.print(currentMillis);Serial.print("-");Serial.print(previousMillis);Serial.print("=");Serial.print(currentMillis-previousMillis);
+Serial.println("");Serial.print(currentMillis-previousMillis);Serial.print("<");Serial.print(working_interval_mili);
+    }
+while(1==1);while(1==1);while(1==1);while(1==1);while(1==1);while(1==1);while(1==1);while(1==1);while(1==1);while(1==1);while(1==1);      
+    previousMillis = currentMillis; //reseteamos el contador
 			
 		if( !ASDAS.is_full_connected() || !http_post_correct ) //si no se consiguió conectar o falló al enviar alguna petición web
 		{

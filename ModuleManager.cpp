@@ -83,8 +83,6 @@ ModuleManager::ModuleManager(const char* passwd, const char *id, const char *ser
 	}
 	else
 		this->connection_successful=false;
-	
-	
 }
 
 bool ModuleManager::is_full_connected(void){return this->connection_successful;}
@@ -124,19 +122,19 @@ bool ModuleManager::connect_network(uint8_t intento=0)
 bool ModuleManager::connect_gprs(uint8_t intento=0)
 {
 	bool return_status;
-  SIM8xxNetworkRegistrationState network_status;
+//SIM8xxNetworkRegistrationState network_status;
 	
 	this->unlock_sim(); //solo desbloquea en caso de que no se haya desbloqueado (que ya debería estarlo)
 	
-	// GPRS connection parameters are usually set after network registration
 	if(this->debug_mode)Serial.print(S_F("[*]Connecting to 2g network"));
 
+    sim_module->disableGprs(); //forzamos la desconexión de la red de datos por si lo estuviera (esto solo pasaría si por un motivo se resetea/reinicia/apaga arduino pero no el módulo sim) (esto se podría mejorar haciendo un chequeo de "AT+SAPBR=2,1" y que nos devuelva la ip que nos ha asignado, en caso negativo devuelve 0.0.0.0)
+    delay(2000);
+//network_status = sim_module->getNetworkRegistrationStatus();
     
-//    sim_module->disableGprs(); //forzamos la desconexión de la red por si lo estuviera, ya que el comando AT CIPSHUT no parece cerrar la conexión correctamente
-    network_status = sim_module->getNetworkRegistrationStatus();
-    
-    //if (!sim_module->getGprsPowerState() && !sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass))  //si no estaba conectado y no se consigue conectar
-    if( static_cast<int8_t>(network_status) & (static_cast<int8_t>(SIM8xxNetworkRegistrationState::Roaming))==0  && !sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass)) //si no estaba conectado y no se consigue conectar
+//if (!sim_module->getGprsPowerState() && !sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass))  //si no estaba conectado y no se consigue conectar
+//if( static_cast<int8_t>(network_status) & (static_cast<int8_t>(SIM8xxNetworkRegistrationState::Roaming))==0  && !sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass)) //si no estaba conectado y no se consigue conectar
+    if( !sim_module->enableGprs(gprs_apn,gprs_user,gprs_pass)) //si no consigue conectar
     {
       if(this->debug_mode)Serial.println(S_F(" [-]Fail"));
       delay(8500);
@@ -153,6 +151,7 @@ bool ModuleManager::connect_gprs(uint8_t intento=0)
   	else
   	{
   		return_status=true;
+      delay(2000);
   		if(this->debug_mode)Serial.println("[+]GPRS connected");
   	}
 	  return return_status;
@@ -181,8 +180,8 @@ void ModuleManager::get_time(void/*char *clock_output*/) //tomamos la hora del r
 {
 	//formato: "20/09/20,04:23:58+08" el 08 es el timezone en cuartos de hora, así que hay que dividirlo entre 4 para que sea el equivalente a 1 hora, así obtendríamos nuestro +2 oficial (pero hay que recordar que la hora ya está con el +2 incluído, así que tal vez debiéramos restarle el +2 a la hora para sumarselo en el servidor al huso horario configurado en él)
 	sim_module->getInternalClock(this->current_time);	//<- anteriormente lo devolvíamos al main, ahora lo gestionamos desde la clase
-
   if(this->debug_mode) {Serial.println(F("[*]Getting clock...:")); Serial.println(this->current_time); }
+  delay(1000);
 }
 
 uint8_t ModuleManager::battery_left(void)	
@@ -228,6 +227,7 @@ void ModuleManager::get_gps(void)
 			dtostrf(satellites, 2 ,2,  this->sat);
 		}
 	}
+  delay(1000);
 	//sim_module->disableGPS(); // <!!!> deshabilitar, en algún momento ?
 }
 
@@ -368,16 +368,16 @@ bool ModuleManager::send_last_sd_line()
 			if(this->debug_mode) 
 				Serial.println(F("[*]reading line..."));
 
-			for(int i=0;i<PARAMETERS_SIZE;i++)
+			for(uint8_t i=0;i<PARAMETERS_SIZE;i++) // continúa mientras el buffer tenga espacio (no podemos almacenar en memoria todas las líneas para enviarlas, así que envíamos cada una en cuanto la lee)
 			{
 				line_buffer[i]=this->myFile.read();
-				if (line_buffer[i] == '\n') //ha llegado al fin de línea
+				if (line_buffer[i] == '\n' || !line_buffer[i] ) //ha llegado al fin de línea o del fichero
 				{
-					line_buffer[i]='\0'; //nueva línea; fin de buffer
+          line_buffer[i]='\0';  //marcamos el final del buffer
 					if(this->debug_mode)
 						Serial.println(line_buffer);
-					//no podemos almacenar en memoria todas las líneas para enviarlas, así que envíamos cada una en cuanto la lee
-					if(line_buffer[0]=="{" && line_buffer[strlen(line_buffer)-1] == "}")  //verificamos que esté correctamente formateada la línea
+
+					if(line_buffer[0]=="{" && line_buffer[i-2] == "}")  //verificamos que esté correctamente formateada la línea (i-2 del \r\n)
 					{
 						if ( !send_http_post(line_buffer) )
 						{
@@ -387,8 +387,10 @@ bool ModuleManager::send_last_sd_line()
 							return false;
 						}
 					}
+          if(line_buffer[i]=='\0')
+            break;
 				}
-			} 
+			}
 		}
 		myFile.close();
 	}
