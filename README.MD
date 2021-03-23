@@ -1,6 +1,6 @@
 # (A)rduino (S)im (D)ata (A)cquisition (S)ystem
 
-![alt asdas_station](https://raw.githubusercontent.com/laresistenciadelbit/main/asdas_station/readme-images/last_boats.jpg)
+![alt asdas_station](https://raw.githubusercontent.com/laresistenciadelbit/asdas_station/main/readme-images/last_boats.jpg)
 
 [FULL DOCUMENTATION (SPANISH)](https://github.com/laresistenciadelbit/varios/raw/master/ASDAS_PUBLIC.PDF)
 
@@ -20,7 +20,7 @@ La parte del servidor la puedes encontrar en:
 
 #### ESTACIÓN ASDAS
 
-![alt asdas_station_circuit](https://raw.githubusercontent.com/laresistenciadelbit/main/asdas_station/readme-images/END_marks.jpg)
+![alt asdas_station_circuit](https://raw.githubusercontent.com/laresistenciadelbit/asdas_station/main/readme-images/END_marks.jpg)
 
 La estación cuenta con un módulo SIM para mandar los datos por la red móvil, un microcontrolador (Arduino Pro Micro versión 3.3V), un lector de tarjetas Micro SD para almacenar los datos que no se hubiesen podido enviar por falta de señal, y un sistema de autonomía con batería, panel solar y un conversor de voltaje que distribuye la energía y carga la batería. También se le añadirán tantos sensores como se desee (hasta el límite de entradas del microcontrolador)
 
@@ -51,7 +51,7 @@ Es necesario usarla para que funcione el sketch:
 
 .
 
-![alt asdas_station_circuit_timelapse](https://raw.githubusercontent.com/laresistenciadelbit/main/asdas_station/readme-images/TIMELAPSE.gif)
+![alt asdas_station_circuit_timelapse](https://raw.githubusercontent.com/laresistenciadelbit/asdas_station/main/readme-images/TIMELAPSE.gif)
 
 
 ___
@@ -71,7 +71,7 @@ The server Github can be accessed from:
 
 #### ASDAS STATION
 
-![alt asdas_station_circuit](https://raw.githubusercontent.com/laresistenciadelbit/main/asdas_station/readme-images/END_marks.jpg)
+![alt asdas_station_circuit](https://raw.githubusercontent.com/laresistenciadelbit/asdas_station/main/readme-images/END_marks.jpg)
 
 The station counts with a Sim module for sending data to the server throught the mobile network, a microcontroller (Arduino Pro Micro 3.3V), a micro SD reader for storing the data that wouldn't be delivered to the server by signal fail, and an autonomous energy system with battery, solar panel and voltage conversor which distributes energy and charges the battery. Also ther will be added so many sensors as is wished (until the microcontroller I/O ports limit)
 
@@ -100,4 +100,4 @@ The library must be used with this sketch to work:
 
 .
 
-![alt asdas_station_circuit_timelapse](https://raw.githubusercontent.com/laresistenciadelbit/main/asdas_station/readme-images/TIMELAPSE.gif)
+![alt asdas_station_circuit_timelapse](https://raw.githubusercontent.com/laresistenciadelbit/asdas_station/main/readme-images/TIMELAPSE.gif)
