@@ -321,7 +321,7 @@ bool ModuleManager::send_http_post(char *parameters_buffer)
 		Serial.println(F("[+]Server response code: "));Serial.print(responseCode);Serial.println("");Serial.println("");
 	#endif
     
-	return (responseCode==200);	// !!! <-- ¿en todo caso devolvería 200 en string?
+	return (responseCode==200);
 }
 
 void ModuleManager::write_sd(char parameters_buffer[])

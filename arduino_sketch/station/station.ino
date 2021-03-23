@@ -1,4 +1,4 @@
-/*	-Proyecto:	Arduino Sim Data Adquisition System 
+/*	-Proyecto:	Arduino Sim Data Acquisition System 
 	-Autor:		Noel Fernández Peral
 	-Requisitos:
 		<>Hardware:
@@ -31,10 +31,10 @@
 
   //Definimos los pines de los sensores que queremos leer (podemos poner tantos como queramos. *el límite son los pines y la memoria)
 #define  SENSOR_NUMBER 2
-const uint8_t  sensor_pin[SENSOR_NUMBER]={10,11};
-const char  sensor_name[][30]={"temperature","co2"};
+const uint8_t  sensor_pin[SENSOR_NUMBER]={8,9};
+const char  sensor_name[][30]={"temperatura","CO"};
 	//Definimos si queremos que se active un pin de salida ante una entrada concreta en el sensor 1
-#define PIN_OUTPUT 13
+//#define PIN_OUTPUT 13
 	//Definimos el valor del sensor 1 para el cual activará el PIN_OUTPUT a HIGH
 #define SENSOR1_THRESHOLD 150
   //Definimos un timeout si queremos que el pin de output se desactive tras ese tiempo (ms)
@@ -46,7 +46,7 @@ const char  sensor_name[][30]={"temperature","co2"};
 #define STATUS_CHAR_LIMIT 14
 
 	//Definimos cada cuantos minutos leerá y mandará la información de los sensores
-#define WORKING_INTERVAL  10
+#define WORKING_INTERVAL  5
 	//Definimos cuántas veces leerá e intentará enviar la información antes de resetear el microcontrolador por incapacidad de conexión para que reinicie todos los módulos
 #define SIM_TIMEOUT_THRESHOLD 5
 /*				</FIN DE LA CONFIGURACIÓN DE VARIABLES>				*/
