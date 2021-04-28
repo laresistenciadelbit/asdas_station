@@ -2,7 +2,7 @@
 
 ![alt asdas_station](https://raw.githubusercontent.com/laresistenciadelbit/asdas_station/main/readme-images/last_boats.jpg)
 
-[FULL DOCUMENTATION LITE (SPANISH)(NO CODE DIAGRAMS)](https://github.com/laresistenciadelbit/varios/raw/master/ASDAS_PUBLIC_LITE.PDF)
+[FULL DOCUMENTATION (SPANISH)](https://github.com/laresistenciadelbit/varios/raw/master/ASDAS_PUBLIC_LITE.PDF)
 
 ## SPANISH
 
